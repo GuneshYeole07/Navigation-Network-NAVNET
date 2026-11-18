@@ -63,6 +63,8 @@ Client options (`client/.env`): `VITE_MAP_STYLE_URL` / `VITE_MAP_STYLE_URL_DARK`
 3. Demo data (optional), from your laptop: copy the database's **External Database URL** from Render, then in `server/`:
    `DATABASE_URL="<external url>" npm run db:seed`
 
+4. Analytics (Python): the Blueprint also creates **navnet-analytics**. When it's live, copy its URL (e.g. `https://navnet-analytics.onrender.com`) into the **navnet** service → Environment → `ANALYTICS_URL`, and save. The shared `ANALYTICS_KEY` is set up for you. To give the ETA model history before you have real rides, open the navnet-analytics **Shell** (paid plans) or run it from your laptop with the External Database URL: `cd analytics && set DATABASE_URL=<external url> && python -m scripts.simulate_history --trips 80`, then restart navnet-analytics.
+
 Free tier notes: the service sleeps after ~15 min idle (first visit takes up to a minute), and voice notes/uploads are lost on redeploy.
 
 ---

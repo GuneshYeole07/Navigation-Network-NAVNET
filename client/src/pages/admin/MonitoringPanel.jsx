@@ -17,6 +17,7 @@ import LiveShell from "../../components/layout/LiveShell";
 import PanelTabs from "../../components/layout/PanelTabs";
 import ChatPanel from "../../components/chat/ChatPanel";
 import ConvoyStats from "../../components/trip/ConvoyStats";
+import { useSmartEta } from "../../hooks/useSmartEta";
 import MemberTable from "../../components/trip/MemberTable";
 import AlertFeed from "../../components/trip/AlertFeed";
 import Modal from "../../components/ui/Modal";
@@ -70,6 +71,7 @@ export default function MonitoringPanel() {
   const navigate = useNavigate();
   const now = useNow(5000);
   const { trip, setTrip, members, stats, alerts, ackAlert, error, loading, connected, role } = useTripLive(id);
+  const smartEta = useSmartEta(id, { active: trip?.status === "ACTIVE", online: connected });
   const [tab, setTab] = useState("members");
   const [view, setView] = useState({ key: "initial", points: null });
   const [focused, setFocused] = useState(null);
@@ -258,7 +260,7 @@ export default function MonitoringPanel() {
         )}
         {tab === "stats" && (
           <div className="p-4">
-            <ConvoyStats stats={stats} />
+            <ConvoyStats stats={stats} smartEta={smartEta} />
           </div>
         )}
       </div>

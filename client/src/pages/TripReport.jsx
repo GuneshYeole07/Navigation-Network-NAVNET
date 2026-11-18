@@ -12,6 +12,7 @@ import { ALERT_META, CHECKPOINT_CATEGORIES, EMERGENCY_TYPES } from "../utils/con
 import { formatClock, formatDuration } from "../utils/format";
 import RideCard from "../components/group/RideCard";
 import Expenses from "../components/group/Expenses";
+import RideInsights from "../components/trip/RideInsights";
 
 export default function TripReport() {
   const { id } = useParams();
@@ -77,6 +78,8 @@ export default function TripReport() {
           <RoadProgress percent={r.routeCompletionPercent} label="Route completion" />
         </div>
       </section>
+
+      <RideInsights tripId={id} />
 
       <section className="mt-8 grid gap-6 print:hidden md:grid-cols-2">
         <div className="panel p-5">

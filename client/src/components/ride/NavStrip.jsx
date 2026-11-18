@@ -14,7 +14,7 @@ const TURN_ICON = {
  * Glanceable top strip for riding: the next manoeuvre in big type, km to go and ETA.
  * Everything here comes from on-device navigation, so it keeps working offline.
  */
-export default function NavStrip({ nav, trip, offline, savedAt, sharing, backTo = "/user" }) {
+export default function NavStrip({ nav, trip, offline, savedAt, sharing, backTo = "/user", smartEta = null }) {
   let Icon = ArrowUp;
   let headline = "Follow the route";
   let sub = null;
@@ -72,9 +72,12 @@ export default function NavStrip({ nav, trip, offline, savedAt, sharing, backTo 
             <CloudOff size={12} /> Offline
           </span>
         )}
-        <span className="font-display text-xl font-bold leading-none">
-          {nav?.arrived ? "Here" : nav ? formatClock(nav.eta) : formatClock(trip.expectedArrival)}
-          <span className="ml-1 font-sans text-xs font-medium muted">ETA</span>
+        <span
+          className="font-display text-xl font-bold leading-none"
+          title={smartEta && !nav?.arrived ? `Learned from past rides (usually within ±${Math.round(smartEta.typical_error_minutes || 0)} min). Plain estimate: ${nav ? formatClock(nav.eta) : "—"}` : undefined}
+        >
+          {nav?.arrived ? "Here" : smartEta ? formatClock(new Date(smartEta.arrival_at)) : nav ? formatClock(nav.eta) : formatClock(trip.expectedArrival)}
+          <span className="ml-1 font-sans text-xs font-medium muted">{smartEta && !nav?.arrived ? "smart ETA" : "ETA"}</span>
         </span>
       </div>
     </div>

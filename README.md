@@ -28,6 +28,14 @@ The map is drawn by the phone from vector data (MapLibre GL), so roads and label
 
 Which map is used, best first: your own Protomaps file (if the server has `PMTILES_PATH`), then OpenFreeMap, then plain OpenStreetMap tiles as a fallback. "Download offline map" saves the vector tiles, fonts and icons along the route (light and dark) on the phone.
 
+### Python analytics service
+
+`analytics/` is a FastAPI service (pandas, NumPy, scikit-learn, SQLAlchemy) that reads the trip GPS history and adds:
+- **Smart ETA** on the ride screen and the monitoring panel: a gradient-boosted model trained on finished trips (traffic by hour, slow sections, the group's real pace, stops). About 35% more accurate than remaining distance ÷ planned speed in cross-validation.
+- **Ride insights** in the trip report: speed along the route km by km, the slowest stretches, where the group stopped, and each rider's steadiness and distance behind the leader.
+
+The app works without it (those panels just don't appear). See `analytics/README.md`.
+
 ### Android app
 
 `client/android` is the same app wrapped with Capacitor. It keeps GPS running with the screen locked and shows the next turn, km to go and arrival time on the lock screen. Build the APK with the **Android app** GitHub Action (no Android Studio needed); see docs/DEPLOYMENT.md.
@@ -52,6 +60,8 @@ Before leaving (on Wi-Fi), tap **Download offline map** on the trip screen. NavN
 **Frontend:** React 18, Vite, Tailwind CSS, React Router, React Hook Form, Axios, MapLibre GL, Framer Motion, Context API, Socket.IO client
 **Backend:** Node.js, Express 5, Socket.IO, JWT, bcrypt (bcryptjs), Zod validation, Helmet, CORS, express-rate-limit, Multer
 **Database:** PostgreSQL + Prisma ORM 7
+**Analytics:** Python, FastAPI, pandas, NumPy, scikit-learn, SQLAlchemy, pytest
+
 **Maps:** MapLibre GL vector maps from OpenFreeMap (free, no API key, light + dark styles), optional self-hosted Protomaps tiles served by the API, OpenStreetMap raster as an automatic fallback, Esri satellite view (online only). Routing: OSRM (FOSSGIS car/bike/foot servers) / OpenRouteService. Search: Nominatim + Photon (proxied server-side)
 **Testing:** Vitest, Supertest, socket.io-client (84 server + 10 client tests) + two Playwright end-to-end tests: a two-browser run (66 checks, including a full offline drill) and a three-phone group ride (33 checks)
 

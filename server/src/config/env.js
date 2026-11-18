@@ -28,6 +28,9 @@ export const env = {
   orsApiKey: process.env.ORS_API_KEY || "",
   osrmUrl: process.env.OSRM_URL || "https://router.project-osrm.org",
   // FOSSGIS OSRM: separate car / bike / foot servers (the OSRM demo above only routes cars).
+  // Python analytics service (FastAPI): ride insights + machine-learned ETA. Empty = off.
+  analyticsUrl: (process.env.ANALYTICS_URL || "").replace(/\/$/, ""),
+  analyticsKey: process.env.ANALYTICS_KEY || "",
   // Self-hosted Protomaps map file (local path or https URL). Empty = use OpenFreeMap.
   pmtilesPath: process.env.PMTILES_PATH || "",
   fossgisRoutingUrl: (process.env.FOSSGIS_ROUTING_URL || "https://routing.openstreetmap.de").replace(/\/$/, ""),

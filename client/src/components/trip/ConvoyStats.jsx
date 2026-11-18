@@ -1,7 +1,7 @@
-import { formatDistance, formatSpeed } from "../../utils/format";
+import { formatClock, formatDistance, formatSpeed } from "../../utils/format";
 
 /** Live convoy analytics. The two numbers an admin scans first get the big type. */
-export default function ConvoyStats({ stats }) {
+export default function ConvoyStats({ stats, smartEta = null }) {
   if (!stats) return null;
   const cells = [
     ["Active", stats.activeMembers, `of ${stats.totalMembers}`],
@@ -34,6 +34,15 @@ export default function ConvoyStats({ stats }) {
           </div>
         ))}
       </dl>
+      {smartEta && (
+        <p className="rounded-control bg-road px-3 py-2 text-sm dark:bg-asphalt-600">
+          <span className="font-semibold">Smart ETA {formatClock(new Date(smartEta.arrival_at))}</span>
+          <span className="muted">
+            {" "}
+            · {Math.round(smartEta.minutes_left)} min left, learned from past rides (usually within ±{Math.round(smartEta.typical_error_minutes || 0)} min)
+          </span>
+        </p>
+      )}
     </section>
   );
 }

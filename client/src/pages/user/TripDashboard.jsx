@@ -7,6 +7,7 @@ import { useTripLive } from "../../hooks/useTripLive";
 import { useGeolocation } from "../../hooks/useGeolocation";
 import { useRideNav } from "../../hooks/useRideNav";
 import { useLockScreenNav } from "../../native/lockScreenNav";
+import { useSmartEta } from "../../hooks/useSmartEta";
 import { useWakeLock } from "../../hooks/useWakeLock";
 import { useAuth } from "../../context/AuthContext";
 import { useNow } from "../../hooks/useNow";
@@ -129,6 +130,7 @@ export default function TripDashboard() {
 
   // On-device navigation from GPS alone (works with no network).
   const nav = useRideNav(trip, position);
+  const smartEta = useSmartEta(id, { active: trip?.status === "ACTIVE", online: connected });
   // Android app: next turn on the lock screen while the trip is on.
   useLockScreenNav({ nav, trip, active: !!trip && trip.status === "ACTIVE" && sharing });
   const { active: screenOn } = useWakeLock(sharing && !!trip && !ended);
@@ -432,7 +434,7 @@ export default function TripDashboard() {
         panel={panel}
         mapOverlay={
           <div className="pointer-events-auto w-full max-w-md space-y-2">
-            <NavStrip nav={nav} trip={trip} offline={offline} savedAt={savedAt} sharing={sharing} backTo={backTo} />
+            <NavStrip nav={nav} trip={trip} offline={offline} savedAt={savedAt} sharing={sharing} backTo={backTo} smartEta={smartEta} />
             {activeTarget && guide && (
               <div className={`flex items-center gap-2 rounded-control px-3 py-2 text-sm font-semibold shadow-float ${activeTarget.kind === "sos" ? "bg-signal text-white" : activeTarget.kind === "meet" ? "bg-stone-cap text-asphalt" : "bg-[#1F6FB2] text-white"}`} role="status">
                 <Navigation size={16} />

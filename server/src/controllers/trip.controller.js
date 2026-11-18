@@ -4,6 +4,7 @@ import { ok } from "../utils/respond.js";
 import * as ride from "../services/ride.service.js";
 import * as poi from "../services/poi.service.js";
 import * as expense from "../services/expense.service.js";
+import * as insights from "../services/insights.service.js";
 
 export const create = async (req, res) => ok(res, await tripService.createTrip(req.user.id, req.body), 201);
 export const listMine = async (req, res) => ok(res, await tripService.listAdminTrips(req.user.id));
@@ -20,6 +21,8 @@ export const leave = async (req, res) => ok(res, await tripService.leaveTrip(req
 export const alerts = async (req, res) => ok(res, await tripService.listAlerts(req.params.id, req.user));
 export const ackAlert = async (req, res) => ok(res, await tripService.acknowledgeAlert(req.params.alertId, req.user));
 export const report = async (req, res) => ok(res, await tripService.getReport(req.params.id, req.user));
+export const insightsFor = async (req, res) => ok(res, await insights.tripInsights(req.params.id, req.user));
+export const smartEta = async (req, res) => ok(res, await insights.smartEta(req.params.id, req.user));
 
 export const messages = async (req, res) =>
   ok(res, await messageService.listMessages(req.params.id, req.user, req.q));

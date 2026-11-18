@@ -35,6 +35,8 @@ r.patch("/alerts/:alertId/ack", requireRole("ADMIN"), c.ackAlert);
 // Single trip (access = trip admin or active member; checked in service)
 r.get("/:id", c.getOne);
 r.get("/:id/report", c.report);
+r.get("/:id/insights", c.insightsFor); // Python analytics service
+r.get("/:id/eta", c.smartEta); // machine-learned arrival time
 r.get("/:id/messages", validate(messagesQuerySchema, "query"), c.messages);
 r.post("/:id/messages", validate(messageSchema), c.sendMessage);
 r.post("/:id/leave", requireRole("USER"), c.leave);

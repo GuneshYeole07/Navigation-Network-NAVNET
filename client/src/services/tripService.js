@@ -16,6 +16,9 @@ export const tripService = {
   sendMessage: (id, body) => api.post(`/trips/${id}/messages`, body),
   threads: (id) => api.get(`/trips/${id}/threads`),
   report: (id) => api.get(`/trips/${id}/report`),
+  // From the Python analytics service (via the API); { available: false } when it's off.
+  insights: (id) => api.get(`/trips/${id}/insights`),
+  smartEta: (id) => api.get(`/trips/${id}/eta`),
   contacts: (id) => api.get(`/trips/${id}/contacts`),
   invite: (id) => api.post(`/trips/${id}/invite`),
   ride: (id) => api.post(`/trips/${id}/ride`),

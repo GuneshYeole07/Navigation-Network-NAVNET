@@ -8,6 +8,7 @@ records the situation (features) and how long the group really took from there (
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,6 +20,8 @@ from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.model_selection import GroupKFold
 
 from .ride import Ride, prepare_pings
+
+log = logging.getLogger("navnet.analytics")
 
 TICK = "2min"
 ARRIVE_M = 150
@@ -80,7 +83,7 @@ def timeline_features(ride: Ride, progress: pd.Series) -> pd.DataFrame:
             "avg_kmh_so_far": np.where(elapsed > 0, ticks.to_numpy() / 1000 / np.maximum(elapsed, 1e-6) * 60, 0),
             "planned_kmh": ride.planned_kmh,
             "hour": ticks.index.tz_convert("Asia/Kolkata").hour if ticks.index.tz is not None else ticks.index.hour,
-            "weekend": (ticks.index.dayofweek >= 5).astype(int),
+            "weekend": (ticks.index.day_of_week >= 5).astype(int),
             "riders": int(ride.pings["user_id"].nunique()) if not ride.pings.empty else 1,
             "stops_so_far": stop_started.reindex(ticks.index, method="ffill").fillna(0).to_numpy(),
             "stopped_now": ((ticks.to_numpy() - two_ago) < 100).astype(int),
@@ -169,8 +172,12 @@ class EtaModel:
     def load(cls, path: Path) -> "EtaModel":
         if not path.exists():
             return cls()
-        data = joblib.load(path)
-        if data.get("features") != FEATURES:  # trained with an older feature set
+        try:
+            data = joblib.load(path)
+        except Exception as e:  # corrupt file or saved by another scikit-learn/NumPy version
+            log.warning("Ignoring saved ETA model %s (%s); it will be retrained", path, e)
+            return cls()
+        if not isinstance(data, dict) or data.get("features") != FEATURES:  # older feature set
             return cls()
         return cls(model=data["model"], metrics=data["metrics"])
 

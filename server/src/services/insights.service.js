@@ -30,12 +30,21 @@ export async function tripInsights(tripId, user) {
   return callAnalytics(`/trips/${encodeURIComponent(tripId)}/insights`, { timeoutMs: 20000 });
 }
 
+const etaInFlight = new Map(); // tripId → Promise, so a whole group refreshing at once makes one call
+
 export async function smartEta(tripId, user) {
   await assertTripAccess(tripId, user);
   const hit = etaCache.get(tripId);
   if (hit && Date.now() - hit.at < ETA_TTL_MS) return hit.data;
-  const data = await callAnalytics(`/trips/${encodeURIComponent(tripId)}/eta`, { timeoutMs: 5000 });
-  etaCache.set(tripId, { at: Date.now(), data });
-  if (etaCache.size > 500) etaCache.delete(etaCache.keys().next().value);
-  return data;
+  if (etaInFlight.has(tripId)) return etaInFlight.get(tripId);
+  // Long rides have many GPS fixes, and a free-tier host can be slow: allow 15 s.
+  const call = callAnalytics(`/trips/${encodeURIComponent(tripId)}/eta`, { timeoutMs: 15000 })
+    .then((data) => {
+      etaCache.set(tripId, { at: Date.now(), data });
+      if (etaCache.size > 500) etaCache.delete(etaCache.keys().next().value);
+      return data;
+    })
+    .finally(() => etaInFlight.delete(tripId));
+  etaInFlight.set(tripId, call);
+  return call;
 }

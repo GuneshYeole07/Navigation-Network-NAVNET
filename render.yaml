@@ -33,6 +33,14 @@ services:
           type: web
           name: navnet-analytics
           envVarKey: ANALYTICS_KEY
+      # Stream positions to the Python safety monitor (possible crash / weak GPS / unusual movement).
+      - key: SAFETY_MONITOR
+        value: "1"
+      # Optional: n8n / Zapier webhook for SOS + crash alerts (see integrations/n8n). Leave empty to skip.
+      - key: N8N_WEBHOOK_URL
+        sync: false
+      - key: N8N_WEBHOOK_SECRET
+        generateValue: true
 
   # Ride insights + machine-learned ETA (FastAPI, pandas, scikit-learn). Reads the same database.
   - type: web
@@ -52,3 +60,9 @@ services:
           property: connectionString
       - key: ANALYTICS_KEY
         generateValue: true
+      - key: SAFETY_MONITOR
+        value: "1"
+      # The NavNet service's public URL (e.g. https://navnet-xxxx.onrender.com), where the safety
+      # monitor sends its alerts. Paste it after the first deploy.
+      - key: API_URL
+        sync: false

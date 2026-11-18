@@ -63,9 +63,17 @@ Client options (`client/.env`): `VITE_MAP_STYLE_URL` / `VITE_MAP_STYLE_URL_DARK`
 3. Demo data (optional), from your laptop: copy the database's **External Database URL** from Render, then in `server/`:
    `DATABASE_URL="<external url>" npm run db:seed`
 
-4. Analytics (Python): the Blueprint also creates **navnet-analytics**. When it's live, copy its URL (e.g. `https://navnet-analytics.onrender.com`) into the **navnet** service → Environment → `ANALYTICS_URL`, and save. The shared `ANALYTICS_KEY` is set up for you. To give the ETA model history before you have real rides, open the navnet-analytics **Shell** (paid plans) or run it from your laptop with the External Database URL: `cd analytics && set DATABASE_URL=<external url> && python -m scripts.simulate_history --trips 80`, then restart navnet-analytics.
+4. Analytics (Python): the Blueprint also creates **navnet-analytics**. When both are live:
+   - **navnet** → Environment → `ANALYTICS_URL` = the analytics URL (e.g. `https://navnet-analytics.onrender.com`)
+   - **navnet-analytics** → Environment → `API_URL` = the NavNet URL (e.g. `https://navnet-xxxx.onrender.com`), so the safety monitor can send its alerts
+   Save both (each redeploys). The shared `ANALYTICS_KEY` and `SAFETY_MONITOR=1` are set for you. To give the ETA model history before you have real rides, run from your laptop with the External Database URL: `cd analytics && set DATABASE_URL=<external url> && python -m scripts.simulate_history --trips 80`, then restart navnet-analytics.
+5. n8n (optional): set `N8N_WEBHOOK_URL` on **navnet**; `N8N_WEBHOOK_SECRET` is generated (copy it into the n8n workflow). See `integrations/n8n`.
 
-Free tier notes: the service sleeps after ~15 min idle (first visit takes up to a minute), and voice notes/uploads are lost on redeploy.
+Free tier notes (Render, 2026):
+- A free service sleeps after 15 minutes with no requests; the first visit then takes about a minute. During a ride the riders' live connection keeps NavNet awake, and NavNet pings the analytics service every 5 minutes so the safety monitor stays awake too.
+- **The free Postgres database expires 30 days after it's created** (14 more days to upgrade before it's deleted). Fine for testing; for real use move to a paid database (Basic, about $6/month) or another host.
+- Only one free database per account; uploads and voice notes are lost on redeploy (no persistent disk).
+- 750 free instance hours a month, shared by both services.
 
 ---
 

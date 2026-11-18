@@ -751,6 +751,9 @@ export async function groupSafety(ctx, now = Date.now()) {
   }
 }
 
+/** Trips with riders on the road right now (kept in memory while live). */
+export const hasActiveTrips = () => [...contexts.values()].some((c) => c.trip.status === "ACTIVE");
+
 export function startSweeper() {
   if (sweepTimer) return;
   sweepTimer = setInterval(() => {

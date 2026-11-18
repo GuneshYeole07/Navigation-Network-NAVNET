@@ -1,8 +1,22 @@
 # NavNet: Smart Group Navigation & Convoy Management
 
+![NavNet: the captain's live map and a rider's phone on a real ride, Shaniwar Wada to Sinhagad Fort, Pune](docs/screenshots/overview.png)
+
 NavNet keeps a group moving together. One admin plans the trip; riders join with a Group ID and password. Everyone then shares one live map: the route, the checkpoints and each other. The admin sees the whole convoy in real time and gets alerted the moment someone drifts off route, stops, loses signal, speeds, runs low on battery or hits SOS.
 
 It's built for bike rides, car convoys, cycling groups, treks, college trips and tour operators, and it runs entirely on open-source mapping (**OpenStreetMap, MapLibre, OpenFreeMap, Protomaps, OSRM, OpenRouteService, Nominatim**). There is no Google Maps code or API anywhere in the project.
+
+## Screenshots
+
+| No signal? Nothing is lost | Python safety monitor: possible crash |
+|---|---|
+| ![Rider in a dead zone: the phone keeps recording and the captain sees a faded dot plus a "probably here" estimate](docs/screenshots/no-signal.png) | ![Possible crash alert on the captain's map](docs/screenshots/possible-crash.png) |
+| **The whole route, on real roads** | **Turn-by-turn on the rider's phone** |
+| ![Planned route from Shaniwar Wada to Sinhagad Fort with the fuel stop](docs/screenshots/route-overview.png) | ![Ride screen with the next turn, km to go and ETA](docs/screenshots/rider-phone.png) |
+| **GPS accuracy: raw vs cleaned** | **Load test: 300 riders, one trip** |
+| ![Position error of raw phone GPS vs NavNet's filter](docs/screenshots/gps-accuracy.png) | ![Load test results: 100% delivered, 63 ms p95, no gaps](docs/screenshots/load-test.png) |
+
+Real OpenStreetMap map and a real 29.9 km road route (Shaniwar Wada → Sinhagad Fort). The riders are simulated. **[Watch the 2-minute demo video](docs/demo/navnet-demo.mp4)** (GPS cleaning, a dead zone, a possible-crash alert).
 
 | Rider | Admin |
 | --- | --- |

@@ -229,7 +229,11 @@ export async function changeStatus(tripId, admin, action) {
 
   let report = null;
   if (action === "end") {
-    report = await generateReport(tripId);
+    // The trip has already ended; a failed summary is rebuilt when the report is opened.
+    report = await generateReport(tripId).catch((e) => {
+      console.error(`[report] trip ${tripId}: ${e.message}`);
+      return null;
+    });
     emitToTrip(tripId, "trip:report", { tripId });
   }
   if (action === "end" || action === "cancel") live.invalidate(tripId);
@@ -353,9 +357,14 @@ export async function acknowledgeAlert(alertId, admin) {
 }
 
 export async function getReport(tripId, user) {
-  await assertTripAccess(tripId, user);
+  const { trip } = await assertTripAccess(tripId, user);
   const existing = await prisma.tripReport.findUnique({ where: { tripId } });
   if (existing) return { ...existing.summary, final: true, generatedAt: existing.generatedAt };
+  // Finished but never saved (e.g. saving failed when the trip ended): save it now.
+  if (trip.status === "COMPLETED") {
+    const saved = await generateReport(tripId);
+    return { ...saved, final: true, generatedAt: new Date() };
+  }
   // Live preview for trips still in progress (not persisted).
   return { ...(await generateReport(tripId, { persist: false })), final: false };
 }

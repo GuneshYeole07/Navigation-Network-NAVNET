@@ -6,7 +6,14 @@
  */
 import { createContext, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import maplibregl from "maplibre-gl";
+import * as maplibregl from "maplibre-gl";
+// MapLibre 6 draws tiles in a separate module worker file and guesses its URL from where the
+// library was loaded. Vite pre-bundles / hashes the library, so that guess points nowhere and
+// no tile ever renders. Hand it the real file instead (served in dev, emitted as an asset in
+// the build, cached by the service worker so the map also works offline).
+import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
+
+maplibregl.setWorkerUrl(workerUrl);
 
 const MapCtx = createContext(null);
 const MarkerCtx = createContext(null);

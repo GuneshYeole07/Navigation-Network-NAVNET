@@ -62,9 +62,14 @@ def prepare_pings(ride: Ride, clean: bool = True) -> pd.DataFrame:
     else:
         df["gps_used"] = True
         filtered_kmh = None
-    along, offset = project(df[["lat", "lng"]].to_numpy(), ride.route)
-    df["along_m"] = along
-    df["offset_m"] = offset
+    # Snap each rider's track in time order, so loops and out-and-back routes work.
+    cum = cumulative(ride.route)
+    df["along_m"] = 0.0
+    df["offset_m"] = 0.0
+    for _, idx in df.groupby("user_id", sort=False).indices.items():
+        along, offset = project(df.loc[idx, ["lat", "lng"]].to_numpy(), ride.route, cum, track=True)
+        df.loc[idx, "along_m"] = along
+        df.loc[idx, "offset_m"] = offset
 
     g = df.groupby("user_id", sort=False)
     dt = g["recorded_at"].diff().dt.total_seconds()

@@ -56,6 +56,9 @@ def train_model(repo: Repository, settings: Settings) -> dict:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
+    if not settings.analytics_key or settings.analytics_key == "change-me":
+        log.warning("ANALYTICS_KEY is %s: set a long random value before exposing this service",
+                    "empty, so every endpoint is open" if not settings.analytics_key else "the example value")
     State.model = EtaModel.load(settings.model_path)
     if not State.model.ready and settings.auto_train:
         def background():

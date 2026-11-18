@@ -89,6 +89,8 @@ async def main():
         R.on("pageerror", lambda e: print("  [rider page error]", str(e)[:300]))
         errors=[]
         for pg,who in ((A,"admin"),(R,"rider")): pg.on("pageerror", lambda e,w=who: errors.append(f"{w}: {e}"))
+        rider_console=[]
+        R.on("console", lambda m: rider_console.append(f"{m.type}: {m.text[:200]}") if m.type in ("error","warning") else None)
 
         # ── 1. Rider registers a brand-new account through the UI
         await R.goto(f"{B}/login/user"); await R.click("text=Create an account")
@@ -270,8 +272,9 @@ async def main():
         for i in range(n//2+6, (3*n)//4, 3): await ff(*line[min(i,n-1)], 1500)
         after_txt = await to_go()
         check("Navigation keeps updating offline (km to go drops)", before_txt != after_txt, f"{before_txt.split()[0]} → {after_txt.split()[0]}")
-        loaded = await R.evaluate("new Promise(r=>{const t=Date.now();(function f(){const m=window.__nnMap;if(m&&m.isStyleLoaded()&&m.areTilesLoaded())return r({ok:true,tiles:m.querySourceFeatures('omt',{sourceLayer:'roads'}).length});if(Date.now()-t>8000)return r({ok:false});setTimeout(f,300)})()})")
+        loaded = await R.evaluate("new Promise(r=>{const t=Date.now();(function f(){const m=window.__nnMap;if(m&&m.isStyleLoaded()&&m.areTilesLoaded())return r({ok:true,tiles:m.querySourceFeatures('omt',{sourceLayer:'roads'}).length});if(Date.now()-t>8000)return r({ok:false,map:!!m,style:m&&m.isStyleLoaded(),tiles:m&&m.areTilesLoaded(),sources:m&&Object.keys(m.getStyle()?.sources||{}),feats:m&&m.getSource('omt')?m.querySourceFeatures('omt',{sourceLayer:'roads'}).length:null});setTimeout(f,300)})()})")
         check("Vector map draws from saved tiles with no network", loaded.get("ok") and loaded.get("tiles",0)>0, json.dumps(loaded))
+        if not loaded.get("ok"): print("rider console (last 15):", *rider_console[-15:], sep="\n  ")
         await R.click("button[aria-label^='Open chat']"); await R.click("button:has-text('Wait for me')")
         check("Chat message queued while offline", await has_text(R,"Sends when back online"))
         await R.click("button[aria-label='Close chat']")

@@ -13,7 +13,7 @@
  * which reads from / writes to Cache Storage. That is what makes the "Download offline map"
  * button work, without depending on service-worker support inside MapLibre's web workers.
  */
-import maplibregl from "maplibre-gl";
+import * as maplibregl from "maplibre-gl";
 import { layers, namedFlavor } from "@protomaps/basemaps";
 import { API_BASE } from "../../services/api";
 

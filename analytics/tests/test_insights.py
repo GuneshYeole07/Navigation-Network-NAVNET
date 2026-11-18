@@ -39,3 +39,16 @@ def test_summary_and_rider_stats(known_ride):
 def test_no_gps_data():
     ride = Ride(trip_id="t", name="Empty", vehicle_type="BIKE", route=np.array([[18.5, 73.8], [18.6, 73.9]]), planned_distance_m=15_000, planned_duration_s=1200)
     assert ride_insights(ride) == {"trip_id": "t", "has_data": False}
+
+
+def test_round_trip_stops_and_arrival(monkeypatch):
+    import app.simulate as sim
+    from app.eta_model import group_progress, training_samples
+
+    make = sim.make_route
+    monkeypatch.setattr(sim, "make_route", lambda rng, km, **k: (lambda r: np.concatenate([r, r[::-1][1:]]))(make(rng, km / 2, **k)))
+    ride, _ = sim.simulate_ride(np.random.default_rng(3), km=40, stops=[(10_000, 15), (30_000, 15)], slow=[])
+    assert group_progress(ride).iloc[-1] > ride.total_m - 200  # the group got home
+    assert not training_samples(ride).empty  # so the ride counts for the ETA model
+    stops = [s for s in ride_insights(ride)["stops"] if s["whole_group"]]
+    assert [round(s["km"]) for s in stops] == [10, 30]  # the second stop is on the way back

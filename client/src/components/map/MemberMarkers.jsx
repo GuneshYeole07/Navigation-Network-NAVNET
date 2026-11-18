@@ -1,5 +1,6 @@
 import { Marker, Popup, Polyline } from "./gl";
 import { ghostIcon, memberIcon } from "./icons";
+import { memberColor } from "../../utils/format";
 import { STALE_AFTER_S, estimatePosition, fixAge } from "../../utils/estimate";
 import { MemberStatusPill } from "../ui/StatusPill";
 import { formatClock, formatDistance, formatSpeed, timeAgo } from "../../utils/format";
@@ -16,13 +17,12 @@ export default function MemberMarkers({ members, selfId, onSelect, now = Date.no
       <Polyline
         key={`gl-${m.userId}`}
         positions={[[m.lat, m.lng], [e.lat, e.lng]]}
-        pathOptions={{ color: "#8A9499", weight: 2, dashArray: "4 6", opacity: 0.8 }}
+        pathOptions={{ color: memberColor(m.userId), weight: 3, dashArray: "2 6", opacity: 0.9 }}
       />,
       <Marker
         key={`gh-${m.userId}`}
         position={[e.lat, e.lng]}
         icon={ghostIcon(m, Math.round(e.age))}
-        zIndexOffset={-100}
         eventHandlers={{ click: () => onSelect?.(m.userId) }}
       >
         <Popup>

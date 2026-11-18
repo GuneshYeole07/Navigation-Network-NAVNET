@@ -216,6 +216,7 @@ export default function TripDashboard() {
   // Also retries every 15 s if an upload or a live send failed while "connected".
   const [unsent, setUnsent] = useState(0);
   const [syncNote, setSyncNote] = useState(null);
+  const [synced, setSynced] = useState(null);
   useEffect(() => {
     const t = setInterval(() => setUnsent(bufferedCount(id)), 3000);
     return () => clearInterval(t);
@@ -231,7 +232,11 @@ export default function TripDashboard() {
       try {
         await flushPositions(id, emit);
         setSyncNote(`Back online: ${n} position${n === 1 ? "" : "s"} uploaded, your track has no gap.`);
-        setTimeout(() => setSyncNote(null), 6000);
+        setSynced(n);
+        setTimeout(() => {
+          setSyncNote(null);
+          setSynced(null);
+        }, 8000);
       } catch {
         setSyncNote(null); // retried below
       } finally {
@@ -509,7 +514,7 @@ export default function TripDashboard() {
         panel={panel}
         mapOverlay={
           <div className="pointer-events-auto w-full max-w-md space-y-2">
-            <NavStrip nav={nav} trip={trip} offline={offline} savedAt={savedAt} sharing={sharing} backTo={backTo} smartEta={smartEta} />
+            <NavStrip nav={nav} trip={trip} offline={offline} savedAt={savedAt} sharing={sharing} backTo={backTo} smartEta={smartEta} unsent={unsent} synced={synced} />
             {activeTarget && guide && (
               <div className={`flex items-center gap-2 rounded-control px-3 py-2 text-sm font-semibold shadow-float ${activeTarget.kind === "sos" ? "bg-signal text-white" : activeTarget.kind === "meet" ? "bg-stone-cap text-asphalt" : "bg-[#1F6FB2] text-white"}`} role="status">
                 <Navigation size={16} />

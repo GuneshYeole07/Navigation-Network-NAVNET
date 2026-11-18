@@ -35,10 +35,10 @@ export function ghostIcon(m, ageS) {
   const color = memberColor(m.userId);
   return divIcon({
     className: "nn-marker",
-    iconSize: [30, 30],
-    iconAnchor: [15, 15],
-    popupAnchor: [0, -15],
-    html: `<div class="nn-ghost" style="border-color:${color};color:${color}" title="Estimated, no GPS for ${ageS}s">${esc(initials(m.name))}</div>`,
+    iconSize: [34, 34],
+    iconAnchor: [17, 17],
+    popupAnchor: [0, -17],
+    html: `<div style="position:relative;display:grid;place-items:center"><div class="nn-ghost" style="border-color:${color};color:${color}" title="Estimated, no GPS for ${ageS}s">${esc(initials(m.name))}</div><span class="nn-stale nn-est">probably here</span></div>`,
   });
 }
 

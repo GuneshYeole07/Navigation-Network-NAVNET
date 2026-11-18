@@ -1,4 +1,4 @@
-import { ArrowUp, ArrowUpLeft, ArrowUpRight, ChevronLeft, CloudOff, CornerUpLeft, CornerUpRight, Flag, Route } from "lucide-react";
+import { ArrowUp, ArrowUpLeft, ArrowUpRight, ChevronLeft, CloudOff, CloudUpload, CornerUpLeft, CornerUpRight, Flag, Route } from "lucide-react";
 import { Link } from "react-router-dom";
 import { turnText } from "../../utils/geo";
 import { formatClock, formatDistance } from "../../utils/format";
@@ -14,7 +14,7 @@ const TURN_ICON = {
  * Glanceable top strip for riding: the next manoeuvre in big type, km to go and ETA.
  * Everything here comes from on-device navigation, so it keeps working offline.
  */
-export default function NavStrip({ nav, trip, offline, savedAt, sharing, backTo = "/user", smartEta = null }) {
+export default function NavStrip({ nav, trip, offline, savedAt, sharing, backTo = "/user", smartEta = null, unsent = 0, synced = null }) {
   let Icon = ArrowUp;
   let headline = "Follow the route";
   let sub = null;
@@ -69,7 +69,12 @@ export default function NavStrip({ nav, trip, offline, savedAt, sharing, backTo 
         </span>
         {offline && (
           <span className="chip bg-stone-cap/25 text-stone-capdark" title={savedAt ? `Trip saved ${formatClock(savedAt)}` : undefined}>
-            <CloudOff size={12} /> Offline
+            <CloudOff size={12} /> {unsent ? `No signal · ${unsent} saved` : "Offline"}
+          </span>
+        )}
+        {!offline && synced != null && (
+          <span className="chip bg-nh/15 text-nh" title="Positions recorded with no signal were uploaded; your track has no gap">
+            <CloudUpload size={12} /> {synced} uploaded
           </span>
         )}
         <span

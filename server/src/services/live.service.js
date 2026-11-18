@@ -14,6 +14,7 @@ import { env } from "../config/env.js";
 import { cumulativeDistances, detectTurns, haversine, projectOnLine } from "../utils/geo.js";
 import { ApiError } from "../utils/ApiError.js";
 import { evaluateLocation, raiseAlert } from "./monitoring.service.js";
+import { riderArrived } from "./webhook.service.js";
 import { emitToTrip, emitToTripAdmins, emitToUser } from "../socket/emitter.js";
 
 const cfg = env.monitoring;
@@ -539,6 +540,7 @@ export async function processLocation(tripId, userId, p, { persist = true } = {}
     m.progress = ctx.total;
     m.maxProgress = ctx.total;
     events.push({ type: "arrived", userId, name: m.name });
+    riderArrived(tripId, userId);
   }
 
   // Checkpoints

@@ -149,6 +149,10 @@ Each `participation[]` item: `name, distanceKm, avgSpeedKmh, maxSpeedKmh, stops,
 | --- | --- | --- | --- | --- |
 | POST | `/uploads/image` | A | `multipart/form-data`, field `image` (JPG/PNG/WEBP ≤ 3 MB) | `{ url: "/uploads/<uuid>.jpg" }` |
 
+## Outgoing webhooks
+
+With `N8N_WEBHOOK_URL` set, NavNet POSTs `alert.raised`, `trip.started`, `trip.ended`, `trip.cancelled` and `rider.arrived`, signed with `X-NavNet-Signature: sha256=HMAC(body, N8N_WEBHOOK_SECRET)`. Payloads and an importable n8n workflow: `integrations/n8n/README.md`.
+
 ## Internal (service to service)
 
 `POST /api/internal/alerts` with header `X-Analytics-Key: <ANALYTICS_KEY>`; body `{ tripId, userId, type: POSSIBLE_CRASH | UNUSUAL_MOVEMENT | WEAK_GPS, message, data? }`. Used by the Python safety monitor; the alert goes to the admin (and, for a possible crash, the riding captain) with the usual cooldown. 401 without the key, 400 for any other type.

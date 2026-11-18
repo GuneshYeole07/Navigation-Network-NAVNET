@@ -1,0 +1,240 @@
+{
+  "name": "NavNet: emergency alerts + ride log",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "navnet-events",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "3957cfc6-66c9-4d04-94f5-012206e8be80",
+      "name": "NavNet event",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "dbf40785-3a5f-465a-b82c-c1811ae0a59d"
+    },
+    {
+      "parameters": {
+        "jsCode": "// NavNet → n8n: check the event is really from NavNet, and prepare the messages.\n// Paste the same secret as N8N_WEBHOOK_SECRET in NavNet's server/.env (leave '' to skip the check;\n// the check needs NODE_FUNCTION_ALLOW_BUILTIN=crypto on your n8n).\nconst SECRET = '';\n\nconst out = [];\nfor (const item of $input.all()) {\n  const req = item.json;\n  const e = req.body || {};\n  if (SECRET) {\n    const crypto = require('crypto');\n    const expected = 'sha256=' + crypto.createHmac('sha256', SECRET).update(JSON.stringify(e)).digest('hex');\n    if ((req.headers || {})['x-navnet-signature'] !== expected) throw new Error('Signature mismatch: this request did not come from NavNet');\n  }\n  const rider = e.rider || {};\n  const card = rider.emergencyCard || {};\n  const captain = e.captain || {};\n  const a = e.alert || {};\n  const trip = e.trip || {};\n  let kind = 'other';\n  if (e.event === 'alert.raised' && a.emergency) kind = 'emergency';\n  else if (e.event === 'trip.ended') kind = 'trip_ended';\n\n  const title = a.type === 'SOS' ? 'SOS' : a.type === 'POSSIBLE_CRASH' ? 'Possible crash' : (a.type || '').replace(/_/g, ' ');\n  const emergencyText = [\n    `🚨 NavNet ${title}: ${rider.name || 'A rider'} may need help.`,\n    a.message,\n    a.mapLink ? `Location: ${a.mapLink}` : null,\n    `Trip: ${trip.name || ''}`,\n    captain.name ? `Ride captain: ${captain.name}${captain.phone ? ' (' + captain.phone + ')' : ''}` : null,\n    card.bloodGroup ? `Blood group: ${card.bloodGroup}` : null,\n  ].filter(Boolean).join('\\n');\n\n  const s = e.summary || {};\n  const summaryText = `🏁 ${trip.name || 'Trip'} finished: ${s.distanceKm ?? '?'} km in ${s.durationMinutes ?? '?'} min, ` +\n    `avg ${s.averageSpeedKmh ?? '?'} km/h, ${s.ridersArrived ?? 0}/${s.riders ?? 0} riders arrived, ${s.sosCount ?? 0} SOS.`;\n\n  out.push({ json: {\n    kind,\n    event: e.event,\n    alertType: a.type || null,\n    riderName: rider.name || null,\n    emergencyContactPhone: card.contactPhone || null,\n    // No emergency contact on the card? The WhatsApp goes to the captain instead.\n    whatsappTo: card.contactPhone || captain.phone || null,\n    captainPhone: captain.phone || null,\n    emergencyText,\n    summaryText,\n    sheetRow: {\n      Date: (e.sentAt || '').slice(0, 10),\n      Trip: trip.name || '',\n      'Distance (km)': s.distanceKm ?? '',\n      'Duration (min)': s.durationMinutes ?? '',\n      'Avg speed (km/h)': s.averageSpeedKmh ?? '',\n      'Max speed (km/h)': s.maxSpeedKmh ?? '',\n      'Riders arrived': `${s.ridersArrived ?? 0}/${s.riders ?? 0}`,\n      SOS: s.sosCount ?? 0,\n    },\n  } });\n}\nreturn out;"
+      },
+      "id": "21291871-3b82-4fce-b91b-759b003afdd4",
+      "name": "Check & prepare",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 3,
+        "output": "={{ ['emergency', 'trip_ended', 'other'].indexOf($json.kind) }}"
+      },
+      "id": "cd9168b7-263d-414f-9760-acccb8cb420e",
+      "name": "What happened?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "from": "+10000000000",
+        "to": "={{ $json.whatsappTo }}",
+        "toWhatsapp": true,
+        "message": "={{ $json.emergencyText }}",
+        "options": {}
+      },
+      "id": "f2aed0cd-1884-4bad-a829-4a817461ccf2",
+      "name": "WhatsApp emergency contact",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        760,
+        80
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "from": "+10000000000",
+        "to": "={{ $json.captainPhone }}",
+        "toWhatsapp": false,
+        "message": "={{ $json.emergencyText }}",
+        "options": {}
+      },
+      "id": "551d399b-0fb4-4a2e-a378-25b76f9e2d2d",
+      "name": "SMS ride captain",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        760,
+        240
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_GROUP_CHAT_ID",
+        "text": "={{ $json.emergencyText }}",
+        "additionalFields": {}
+      },
+      "id": "d9879536-302a-4ac7-a33d-d4c2db70bddf",
+      "name": "Telegram group: emergency",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        760,
+        400
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_GROUP_CHAT_ID",
+        "text": "={{ $json.summaryText }}",
+        "additionalFields": {}
+      },
+      "id": "f650916d-5fb2-43f2-8049-54fd7f973841",
+      "name": "Telegram group: ride summary",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        760,
+        600
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(i => ({ json: i.json.sheetRow }));"
+      },
+      "id": "dd08ed2d-065b-4415-9c7a-8a2ff18b7a11",
+      "name": "Ride row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        760,
+        760
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_SPREADSHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Rides"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "05c8fa93-2515-45e0-8fcc-6738df91449e",
+      "name": "Log ride in Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1000,
+        760
+      ],
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "NavNet event": {
+      "main": [
+        [
+          {
+            "node": "Check & prepare",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check & prepare": {
+      "main": [
+        [
+          {
+            "node": "What happened?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "What happened?": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp emergency contact",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "SMS ride captain",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Telegram group: emergency",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram group: ride summary",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Ride row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Ride row": {
+      "main": [
+        [
+          {
+            "node": "Log ride in Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

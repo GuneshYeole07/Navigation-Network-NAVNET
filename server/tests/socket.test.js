@@ -292,3 +292,84 @@ describe("position stream to the safety monitor", () => {
     }
   });
 });
+
+describe("webhooks for automation (n8n)", () => {
+  let hook, got, env;
+  const waitFor = async (pred, ms = 4000) => {
+    const t = Date.now();
+    while (Date.now() - t < ms) {
+      const hit = got.find(pred);
+      if (hit) return hit;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    throw new Error("webhook not received");
+  };
+  beforeAll(async () => {
+    got = [];
+    hook = http.createServer((req, res) => {
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => {
+        got.push({ headers: req.headers, body, json: JSON.parse(body) });
+        res.end("ok");
+      });
+    });
+    await new Promise((r) => hook.listen(0, r));
+    env = (await import("../src/config/env.js")).env;
+    env.webhookUrl = `http://127.0.0.1:${hook.address().port}/navnet`;
+    env.webhookSecret = "hook-secret";
+    await prisma.user.update({ where: { id: rider.user.id }, data: { bloodGroup: "B+", emergencyName: "Mom", emergencyPhone: "+919800000009" } });
+  });
+  afterAll(async () => {
+    env.webhookUrl = "";
+    await new Promise((r) => hook.close(r));
+  });
+
+  it("sends a signed alert.raised for SOS with the rider's emergency card", async () => {
+    await emit(riderSock, "sos:trigger", { tripId, lat: 18.531, lng: 73.9, speed: 0, battery: 40, emergencyType: "ACCIDENT" });
+    const h = await waitFor((x) => x.json.event === "alert.raised" && x.json.alert.type === "SOS");
+    const { sign } = await import("../src/services/webhook.service.js");
+    expect(h.headers["x-navnet-signature"]).toBe(sign(h.body, "hook-secret"));
+    expect(h.headers["x-navnet-event"]).toBe("alert.raised");
+    expect(h.json.alert.emergency).toBe(true);
+    expect(h.json.alert.mapLink).toMatch(/openstreetmap\.org/);
+    expect(h.json.rider.emergencyCard).toEqual({ bloodGroup: "B+", contactName: "Mom", contactPhone: "+919800000009" });
+    expect(h.json.trip.id).toBe(tripId);
+    expect(h.json.captain).toBeTruthy();
+  });
+
+  it("routine alerts don't carry the emergency card", async () => {
+    await request(app)
+      .post("/api/internal/alerts")
+      .set("X-Analytics-Key", "test-analytics-key")
+      .send({ tripId, userId: rider.user.id, type: "WEAK_GPS", message: "Asha's GPS has been weak" });
+    const h = await waitFor((x) => x.json.alert?.type === "WEAK_GPS");
+    expect(h.json.alert.emergency).toBe(false);
+    expect(h.json.rider.emergencyCard).toBeUndefined();
+  });
+
+  it("retries when the automation tool is briefly down", async () => {
+    let calls = 0;
+    const flaky = http.createServer((req, res) => {
+      calls += 1;
+      req.resume();
+      res.statusCode = calls < 3 ? 503 : 200;
+      res.end();
+    });
+    await new Promise((r) => flaky.listen(0, r));
+    const { sendEvent } = await import("../src/services/webhook.service.js");
+    const old = env.webhookUrl;
+    env.webhookUrl = `http://127.0.0.1:${flaky.address().port}/x`;
+    const [ok] = await sendEvent("test.ping", { hello: 1 });
+    env.webhookUrl = old;
+    await new Promise((r) => flaky.close(r));
+    expect(ok).toBe(true);
+    expect(calls).toBe(3);
+  });
+
+  it("sends trip.ended with the ride summary", async () => {
+    await request(app).patch(`/api/trips/${tripId}/status`).set(auth(admin.token)).send({ action: "end" });
+    const h = await waitFor((x) => x.json.event === "trip.ended", 8000);
+    expect(h.json.summary).toMatchObject({ riders: expect.any(Number), sosCount: expect.any(Number) });
+  });
+});

@@ -6,6 +6,7 @@ import * as live from "./live.service.js";
 import { emitToTrip, emitToUser, evictUserFromTrip } from "../socket/emitter.js";
 import { createSystemMessage } from "./message.service.js";
 import { generateReport } from "./analytics.service.js";
+import { tripChanged } from "./webhook.service.js";
 
 const PROFILE_BY_VEHICLE = { BICYCLE: "cycling", WALKING: "walking" };
 
@@ -237,6 +238,7 @@ export async function changeStatus(tripId, admin, action) {
     emitToTrip(tripId, "trip:report", { tripId });
   }
   if (action === "end" || action === "cancel") live.invalidate(tripId);
+  tripChanged(tripId, action, report);
   return { status: updated.status, report };
 }
 

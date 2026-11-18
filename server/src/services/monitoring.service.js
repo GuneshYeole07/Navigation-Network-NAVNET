@@ -6,6 +6,7 @@
 import { prisma } from "../database/prisma.js";
 import { env } from "../config/env.js";
 import { emitToTripAdmins, emitToUser } from "../socket/emitter.js";
+import { alertRaised } from "./webhook.service.js";
 
 const cfg = env.monitoring;
 const cooldowns = new Map(); // `${tripId}:${userId}:${type}` -> last raised ms
@@ -134,6 +135,7 @@ export async function raiseAlert(tripId, spec, member, { captainId = null, admin
   });
 
   const payload = { ...alert, userName: member?.name ?? null };
+  alertRaised(alert);
   const event = spec.type === "SOS" ? "sos:alert" : "alert:new";
   emitToTripAdmins(tripId, event, payload);
   // The riding captain (leader) gets group-safety alerts on their phone too.

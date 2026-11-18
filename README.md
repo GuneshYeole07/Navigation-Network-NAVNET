@@ -50,6 +50,10 @@ The app works without it (those panels just don't appear). See `analytics/README
 - **Android battery guide**: one-time card telling riders how to stop Android killing tracking (Unrestricted battery, Allow all the time, Autostart on Xiaomi/Oppo/Vivo/Realme).
 - **Scales**: 300 riders in one trip, with dead zones and dropped connections, all positions delivered to the admin's map, p95 63 ms (see `analytics/loadtest/results`).
 
+### Automations with n8n
+
+`integrations/n8n` has a ready-to-import n8n workflow: when a rider hits SOS or the safety monitor sees a possible crash, n8n WhatsApps their emergency contact, SMSes the ride captain and posts to a Telegram group with the location; when a trip ends, it posts the summary and logs the ride in Google Sheets. NavNet sends signed webhooks (`N8N_WEBHOOK_URL`), with retries.
+
 ### Android app
 
 `client/android` is the same app wrapped with Capacitor. It keeps GPS running with the screen locked and shows the next turn, km to go and arrival time on the lock screen. Build the APK with the **Android app** GitHub Action (no Android Studio needed); see docs/DEPLOYMENT.md.
@@ -173,6 +177,7 @@ docker compose exec app npm run db:seed
 | `SWEEP_INTERVAL_SECONDS` | | `15` | Background check for offline/stationary riders |
 | `ANALYTICS_URL` / `ANALYTICS_KEY` | | *(empty = off)* | Python analytics service and its shared secret |
 | `SAFETY_MONITOR` | | *(off)* | `1` = stream positions to the Python safety monitor (set it in `analytics/.env` too) |
+| `N8N_WEBHOOK_URL` / `N8N_WEBHOOK_SECRET` | | *(empty = off)* | Send SOS, possible crash, trip start/end and arrivals to n8n (or Zapier/Make), signed; see `integrations/n8n` |
 | `RATE_LIMIT_DISABLED` | | *(off)* | `1` = no rate limits, for local load tests only (ignored when `NODE_ENV=production`) |
 
 ### Client (`client/.env`)

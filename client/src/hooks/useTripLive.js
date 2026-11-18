@@ -85,7 +85,14 @@ export function useTripLive(tripId) {
       new Promise((resolve, reject) => {
         if (!socket?.connected) return reject(new Error("You're offline. Reconnecting…"));
         socket.timeout(10000).emit(event, { tripId, ...data }, (err, res) => {
-          if (err) return reject(new Error("The server didn't respond in time."));
+          if (err) {
+            // No answer in 10 s: the link is dead even if the socket hasn't noticed yet (tunnels
+            // often drop silently, and the heartbeat takes up to 20 s to give up). Drop the
+            // transport now, so the app switches to "No signal" (and starts saving positions on
+            // the phone) at once and reconnects by itself when signal returns.
+            if (socket.connected) socket.io.engine?.close();
+            return reject(new Error("The server didn't respond in time."));
+          }
           if (!res?.ok) return reject(new Error(res?.error || "Request failed"));
           resolve(res.data);
         });

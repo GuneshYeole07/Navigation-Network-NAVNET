@@ -145,7 +145,7 @@ export class GpsFilter {
       this.lastUsed = me;
       return this.output(true, raw);
     }
-    if (this.rejected.length && t - this.rejected[this.rejected.length - 1].t > HOLD_TIMEOUT_S) this.confirmHeld();
+    if (this.rejected.length && t - this.rejected[this.rejected.length - 1].t > HOLD_TIMEOUT_S && this.heldIsBelievable()) this.confirmHeld();
     // Far from the frame origin the flat-earth maths degrades: re-centre (state is kept).
     const [lat0, lng0] = this.toLatLng(this.x[0], this.x[1]);
     if (haversine(lat0, lng0, this.frame.lat0, this.frame.lng0) > 20000) {
@@ -272,9 +272,20 @@ export class GpsFilter {
    */
   tick(nowMs = Date.now()) {
     const held = this.rejected[this.rejected.length - 1];
-    if (!held || nowMs / 1000 - held.t <= HOLD_TIMEOUT_S) return null;
+    if (!held || nowMs / 1000 - held.t <= HOLD_TIMEOUT_S || !this.heldIsBelievable()) return null;
     this.confirmHeld();
     return this.output(true, held.raw);
+  }
+
+  /**
+   * Silence alone doesn't prove a held fix right: a GPS jump followed by a gap in fixes looks
+   * the same. Accept it only if the rider could have got there at about the speed they were doing.
+   */
+  heldIsBelievable() {
+    const held = this.rejected[this.rejected.length - 1];
+    if (!held || !this.lastUsed) return false;
+    const v = Math.hypot(this.x[2], this.x[3]);
+    return GpsFilter.implied(held, this.lastUsed) <= Math.min(GpsFilter.limit(held, this.lastUsed), 1.5 * v + 5);
   }
 
   confirmHeld() {

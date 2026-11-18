@@ -166,7 +166,14 @@ def kalman_track(
             last_used = i
             rejected_run = []
             continue
-        if rejected_run and t_s[i] - t_s[rejected_run[-1]] > HOLD_TIMEOUT_S:
+        if (
+            rejected_run
+            and t_s[i] - t_s[rejected_run[-1]] > HOLD_TIMEOUT_S
+            # Silence alone doesn't prove it: a GPS jump followed by a gap looks the same.
+            # Accept only if the rider could have got there at about the speed they were doing.
+            and implied_speed(rejected_run[-1], last_used)
+            <= min(speed_limit(rejected_run[-1], last_used), 1.5 * float(np.hypot(x[2], x[3])) + 5.0)
+        ):
             # A held-back fix that nothing contradicted for a while was real: a rider who
             # turned into a car park and stopped sends no more fixes to confirm it.
             j = rejected_run[-1]

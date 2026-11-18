@@ -78,7 +78,7 @@ export function initSocket(httpServer) {
       cb(null, isAllowedOrigin(origin) || isSameOrigin(origin, host));
     },
     pingInterval: 10000,
-    pingTimeout: 20000,
+    pingTimeout: 10000, // notice a dead connection within ~20 s, not ~30 s
   });
 
   // ── Auth handshake: JWT in socket.handshake.auth.token ──

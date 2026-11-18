@@ -81,13 +81,25 @@ describe("live GPS filter", () => {
 
   it("accepts a held-back fix once nothing contradicts it (rider turned in and stopped)", () => {
     const g = new GpsFilter();
-    for (let i = 0; i < 6; i++) g.push({ lat: 18.53, lng: 73.88 + i * 0.0003, accuracy: 8, timestamp: i * 1000 });
-    const held = g.push({ lat: 18.5325, lng: 73.8815, accuracy: 8, timestamp: 6000 }); // sharp turn into a car park
-    expect(held.used).toBe(false);
-    expect(g.tick(10_000)).toBeNull(); // still waiting
-    const ok = g.tick(15_000);
-    expect(ok.used).toBe(true);
-    expect(dist(ok.lat, ok.lng, 18.5325, 73.8815)).toBeLessThan(1);
+    // East at ~43 km/h, one fix a second; then a sharp turn north into a car park and stop.
+    for (let i = 0; i < 8; i++) g.push({ lat: 18.53, lng: 73.88 + i * 0.000114, accuracy: 8, timestamp: i * 1000 });
+    const lng = 73.88 + 7 * 0.000114;
+    const first = g.push({ lat: 18.53 + 40 / 111320, lng, accuracy: 8, timestamp: 10000 });
+    // Either followed at once, or held and then accepted once nothing contradicts it.
+    const final = first.used ? first : g.tick(20000);
+    expect(final.used).toBe(true);
+    expect(dist(final.lat, final.lng, 18.53 + 40 / 111320, lng)).toBeLessThan(15);
+  });
+
+  it("a GPS jump followed by a long gap in fixes is still not believed", () => {
+    const g = new GpsFilter();
+    let t = 0;
+    for (let i = 0; i < 12; i++) g.push({ lat: 18.52, lng: 73.85 - i * 0.0002, accuracy: 8, timestamp: (t += 5000) });
+    const jump = g.push({ lat: 18.5212, lng: 73.85 - 12 * 0.0002, accuracy: 8, timestamp: (t += 5000) }); // 130 m sideways
+    expect(jump.used).toBe(false);
+    expect(g.tick(t + 12000)).toBeNull(); // 12 s with no fix: still not accepted
+    const back = g.push({ lat: 18.52, lng: 73.85 - 14 * 0.0002, accuracy: 8, timestamp: t + 12000 });
+    expect(dist(back.lat, back.lng, 18.52, 73.85 - 14 * 0.0002)).toBeLessThan(15);
   });
 
   it("ignores a fix with terrible accuracy", () => {

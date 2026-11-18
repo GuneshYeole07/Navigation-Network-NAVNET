@@ -193,8 +193,12 @@ async def main():
 
         # ── 6. Real browser GPS: move rider along the route
         n=len(line)
-        async def goto_pt(lat,lng,wait=3600):
-            await rctx.set_geolocation({"latitude":lat,"longitude":lng,"accuracy":8}); await R.wait_for_timeout(wait)
+        # accuracy 8 = a real phone: the GPS filter (phone + server) is fully on.
+        # Fast-forward stretches (minutes of riding squeezed into seconds, i.e. impossible
+        # speeds) use accuracy 0, which both treat as a simulator and trust as-is.
+        async def goto_pt(lat,lng,wait=3600,acc=8):
+            await rctx.set_geolocation({"latitude":lat,"longitude":lng,"accuracy":acc}); await R.wait_for_timeout(wait)
+        async def ff(lat,lng,wait=3600): await goto_pt(lat,lng,wait,0)
         for i in range(0, max(4,n//6), max(1,n//24)):
             await goto_pt(*line[i])
         s = api(f"/trips/{trip['id']}", atoken); me=[x for x in s["members"] if x["name"]=="Test Rider"][0]
@@ -203,11 +207,15 @@ async def main():
         check("Rider dashboard shows km-to-go and ETA", await has_text(R,"km to go") and await has_text(R,"ETA"))
 
         # ── 7. Smart monitoring: off-route (1 km north, twice) and overspeed (big jump)
+        # Moves are physically possible (≤ ~110 km/h): the phone-side GPS filter and the server
+        # both throw away "teleports" now, exactly as they should for a real GPS glitch.
         mid=line[n//3]
-        await goto_pt(mid[0]+0.01, mid[1]); await goto_pt(mid[0]+0.0102, mid[1])
+        for k in range(1, 12): await goto_pt(mid[0]+0.001*k, mid[1], 3000)   # ride ~1.2 km off the route
+        await goto_pt(mid[0]+0.0121, mid[1])
         await A.click("role=tab[name=/Alerts/]")
         check("Off-route alert reaches admin", await has_text(A,"off the planned route", 10000))
-        check("Overspeed alert reaches admin (GPS jump)", await has_text(A,"limit 60", 6000))
+        for k in range(10, -1, -1): await goto_pt(mid[0]+0.001*k, mid[1], 3000)  # back to the route, fast
+        check("Overspeed alert reaches admin (fast riding)", await has_text(A,"limit 60", 6000))
         await goto_pt(*line[n//3+1])
 
         # ── 8. Chat: group, private both ways, broadcast
@@ -247,7 +255,7 @@ async def main():
 
         # ── 11. Server restart mid-trip: state recovers from Postgres
         srv.terminate(); srv.wait(); time.sleep(1); srv=start_server(); time.sleep(4)
-        for i in range(n//3+2, n//2+4, 3): await goto_pt(*line[min(i,n-1)])
+        for i in range(n//3+2, n//2+4, 3): await ff(*line[min(i,n-1)])
         s2 = api(f"/trips/{trip['id']}", atoken); me2=[x for x in s2["members"] if x["name"]=="Test Rider"][0]
         check("Survives server restart (reconnect + progress kept)", me2["progress"]>=me["progress"] and me2["online"], f"progress {me2['progress']} m")
 
@@ -259,7 +267,7 @@ async def main():
         def to_go():
             return R.locator("text=to go").first.locator("xpath=..").inner_text()
         before_txt = await to_go()
-        for i in range(n//2+6, (3*n)//4, 3): await goto_pt(*line[min(i,n-1)], 1500)
+        for i in range(n//2+6, (3*n)//4, 3): await ff(*line[min(i,n-1)], 1500)
         after_txt = await to_go()
         check("Navigation keeps updating offline (km to go drops)", before_txt != after_txt, f"{before_txt.split()[0]} → {after_txt.split()[0]}")
         loaded = await R.evaluate("new Promise(r=>{const t=Date.now();(function f(){const m=window.__nnMap;if(m&&m.isStyleLoaded()&&m.areTilesLoaded())return r({ok:true,tiles:m.querySourceFeatures('omt',{sourceLayer:'roads'}).length});if(Date.now()-t>8000)return r({ok:false});setTimeout(f,300)})()})")
@@ -278,7 +286,7 @@ async def main():
         await rctx.set_offline(False); vite=start_vite(); srv=start_server(); time.sleep(7)
         await R.wait_for_timeout(8000)
         await A.click("role=tab[name='Chat']"); await A.click("role=tab[name='Group chat']")
-        await goto_pt(*line[(3*n)//4])
+        await ff(*line[(3*n)//4])
         check("Queued chat delivered after reconnect", await has_text(A,"Wait for me", 15000))
         outbox_left = await R.evaluate("Object.keys(localStorage).filter(k=>k.startsWith('navnet-outbox-')).map(k=>localStorage.getItem(k)).join('')")
         check("Rider's offline queue emptied", outbox_left in ("", "[]"), outbox_left[:60])
@@ -287,10 +295,13 @@ async def main():
         check("Position syncs to admin after reconnect", me4["progress"]>prog_before, f"{prog_before} → {me4['progress']} m")
 
         # ── 12. Checkpoint + arrival
-        await goto_pt(*line[-2]); await goto_pt(*line[-1]); await R.wait_for_timeout(1500)
+        await ff(*line[-2]); await ff(*line[-1]); await R.wait_for_timeout(1500)
         s3 = api(f"/trips/{trip['id']}", atoken); me3=[x for x in s3["members"] if x["name"]=="Test Rider"][0]
         check("Checkpoint recorded as visited", len(me3["checkpointsVisited"])==1)
-        check("Arrival detected at destination", me3["status"]=="ARRIVED")
+        import math
+        dlat, dlng = line[-1]
+        dist_end = 6371000*math.hypot(math.radians(me3["lat"]-dlat), math.radians(me3["lng"]-dlng)*math.cos(math.radians(dlat))) if me3["lat"] else -1
+        check("Arrival detected at destination", me3["status"]=="ARRIVED", f"{me3['status']}, {dist_end:.0f} m from the end, accuracy {me3.get('accuracy')}")
 
         # ── 13. End trip → analytics
         await A.click("button:has-text('End')"); await A.click("button:has-text('End trip')"); await A.wait_for_timeout(3500)

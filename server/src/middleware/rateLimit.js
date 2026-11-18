@@ -7,7 +7,8 @@ const handler = (_req, res) =>
     error: { message: "Too many requests. Please slow down and try again shortly." },
   });
 
-const skip = () => env.isTest;
+// Off in tests, and for local load tests (RATE_LIMIT_DISABLED=1, ignored in production).
+const skip = () => env.isTest || (env.rateLimitDisabled && process.env.NODE_ENV !== "production");
 
 /** General API ceiling per IP. */
 export const apiLimiter = rateLimit({

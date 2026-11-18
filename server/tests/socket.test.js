@@ -167,3 +167,128 @@ describe("reconnect race", () => {
     o.close();
   });
 });
+
+describe("tracking accuracy", () => {
+  let tripId; // its own trip: the shared one is full
+  beforeAll(async () => {
+    tripId = (await request(app).post("/api/trips").set(auth(admin.token)).send(tripInput({ groupCode: "ACC-RIDE", maxMembers: 10 }))).body.data.id;
+    await request(app).patch(`/api/trips/${tripId}/status`).set(auth(admin.token)).send({ action: "start" });
+    await emit(adminSock, "trip:join", { tripId });
+  });
+  const newRider = async (name, email) => {
+    const r = (await request(app).post("/api/auth/register").send({ name, email, password: "Passw0rd" })).body.data;
+    await request(app).post("/api/trips/join").set(auth(r.token)).send({ groupCode: "ACC-RIDE", password: "secret1" });
+    const s = await connect(r.token);
+    await emit(s, "trip:join", { tripId });
+    return { r, s };
+  };
+  const wait = (ms) => new Promise((res) => setTimeout(res, ms));
+
+  it("ignores an impossible GPS jump but accepts the rider once fixes agree", async () => {
+    const { s } = await newRider("Chirag", "c3@t.dev");
+    const t0 = Date.now();
+    expect((await emit(s, "location:update", { tripId, lat: 18.5308, lng: 73.88, accuracy: 8, recordedAt: t0 })).ok).toBe(true);
+    await wait(1100);
+    // 5 km away 1 s later with "8 m accuracy": a glitch.
+    const bad = await emit(s, "location:update", { tripId, lat: 18.5308, lng: 73.928, accuracy: 8, recordedAt: t0 + 1000 });
+    expect(bad.data.ignored).toBe("impossible-jump");
+    // A fix that's really far off with honest accuracy is fine.
+    await wait(1100);
+    const ok = await emit(s, "location:update", { tripId, lat: 18.5308, lng: 73.8803, accuracy: 10, recordedAt: t0 + 2000 });
+    expect(ok.data.ignored).toBeUndefined();
+    s.close();
+  });
+
+  it("does not move a rider backwards for a fix that arrives late", async () => {
+    const { s } = await newRider("Deepa", "d4@t.dev");
+    const t0 = Date.now();
+    await emit(s, "location:update", { tripId, lat: 18.5308, lng: 73.89, accuracy: 5, recordedAt: t0 });
+    await wait(1100);
+    const late = await emit(s, "location:update", { tripId, lat: 18.5308, lng: 73.885, accuracy: 5, recordedAt: t0 - 30_000 });
+    expect(late.data.ignored).toBe("out-of-order");
+    s.close();
+  });
+
+  it("stores a dead-zone batch without gaps and moves the rider to the newest point", async () => {
+    const { r, s } = await newRider("Esha", "e5@t.dev");
+    const t0 = Date.now() - 120_000;
+    // 2 minutes in a tunnel, one fix every 2 s (the server keeps one per 5 s).
+    const points = Array.from({ length: 60 }, (_, i) => ({
+      lat: 18.5308, lng: 73.885 + i * 0.0002, speed: 30, accuracy: 6, recordedAt: t0 + i * 2000,
+    }));
+    const moved = next(adminSock, "member:location");
+    const ack = await emit(s, "location:batch", { tripId, points: [...points].reverse() });
+    expect(ack.ok).toBe(true);
+    expect(ack.data.received).toBe(60);
+    expect(ack.data.stored).toBe(21); // every 3rd (≥5 s apart) + the newest
+    const m = await moved;
+    expect(m.lng).toBeCloseTo(73.885 + 59 * 0.0002, 6);
+    const rows = await prisma.locationPing.findMany({ where: { tripId, userId: r.user.id }, orderBy: { recordedAt: "asc" } });
+    expect(rows.length).toBeGreaterThanOrEqual(20);
+    expect(rows[0].recordedAt.getTime()).toBe(t0); // the phone's time, not upload time
+    s.close();
+  });
+
+  it("rejects an oversized batch", async () => {
+    const { s } = await newRider("Farid", "f6@t.dev");
+    const points = Array.from({ length: 501 }, () => ({ lat: 18.53, lng: 73.9 }));
+    const ack = await emit(s, "location:batch", { tripId, points });
+    expect(ack.ok).toBe(false);
+    s.close();
+  });
+});
+
+describe("safety monitor alerts (internal endpoint)", () => {
+  it("needs the shared key", async () => {
+    const r = await request(app).post("/api/internal/alerts").send({});
+    expect(r.status).toBe(401);
+    const w = await request(app).post("/api/internal/alerts").set("X-Analytics-Key", "wrong").send({});
+    expect(w.status).toBe(401);
+  });
+
+  it("raises a possible-crash alert to the admin, once per cooldown", async () => {
+    const got = next(adminSock, "alert:new");
+    const body = { tripId, userId: rider.user.id, type: "POSSIBLE_CRASH", message: "Asha stopped suddenly from 48 km/h and hasn't moved for 50 s", data: { fromKmh: 48 } };
+    const r = await request(app).post("/api/internal/alerts").set("X-Analytics-Key", "test-analytics-key").send(body);
+    expect(r.status).toBe(200);
+    expect(r.body.data.raised).toBe(true);
+    const a = await got;
+    expect(a.type).toBe("POSSIBLE_CRASH");
+    expect(a.severity).toBe("CRITICAL");
+    expect(a.data.source).toBe("safety-monitor");
+    const again = await request(app).post("/api/internal/alerts").set("X-Analytics-Key", "test-analytics-key").send(body);
+    expect(again.body.data.raised).toBe(false);
+  });
+
+  it("rejects unknown alert types (the monitor can't raise SOS)", async () => {
+    const r = await request(app)
+      .post("/api/internal/alerts")
+      .set("X-Analytics-Key", "test-analytics-key")
+      .send({ tripId, userId: rider.user.id, type: "SOS", message: "x" });
+    expect(r.status).toBe(400);
+  });
+});
+
+describe("position stream to the safety monitor", () => {
+  it("publishes each processed position on NOTIFY navnet_ping when SAFETY_MONITOR is on", async () => {
+    const { env } = await import("../src/config/env.js");
+    const pg = (await import("pg")).default;
+    const listener = new pg.Client({ connectionString: process.env.DATABASE_URL.split("?")[0] });
+    await listener.connect();
+    await listener.query("LISTEN navnet_ping");
+    const got = new Promise((res) => listener.once("notification", (n) => res(JSON.parse(n.payload))));
+    env.safetyMonitor = true;
+    try {
+      await new Promise((r) => setTimeout(r, 1100));
+      // accuracy 0 = simulated fix (skips the impossible-jump guard; the rider was elsewhere a moment ago)
+      await emit(riderSock, "location:update", { tripId, lat: 18.5308, lng: 73.94, speed: 33, accuracy: 0, heading: 90 });
+      const msg = await got;
+      expect(msg).toMatchObject({ tripId, userId: rider.user.id, speed: 33, accuracy: 0, heading: 90 });
+      expect(typeof msg.nearPlace).toBe("boolean");
+      expect(msg.t).toBeGreaterThan(0);
+    } finally {
+      env.safetyMonitor = false;
+      await listener.end();
+    }
+  });
+});

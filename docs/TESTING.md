@@ -7,7 +7,10 @@
 | **Unit** (server) | Vitest | Geo math (haversine, bearing, projection, windowed projection), every monitoring rule including its false-alarm guards, analytics track maths (distance, GPS-teleport filtering, stop detection, stop clustering) |
 | **API integration** | Vitest + Supertest + real Postgres | Auth (validation, admin invite code, portal enforcement, RBAC), the full trip lifecycle (create → join → chat → leader → pause/resume → remove → end → report), community join/approve/announce flow, health and 404 handling |
 | **Real-time integration** | Vitest + socket.io-client against a real HTTP + Socket.IO server | Handshake auth, room joins, live location with derived ETA/progress, overspeed alert to admin plus rider notice, checkpoint crossing, SOS payload completeness and acknowledgement, sweeper OFFLINE detection, arrival, group chat, wrong-direction sliding window |
-| **Unit** (client) | Vitest | Formatting helpers and client geo parity with the server |
+| **Unit** (client) | Vitest | Formatting helpers, client geo parity with the server, the live **GPS filter** (replays Python-generated tracks and must match the Python filter within 1 m on every fix; turns, U-turns, glitches, cached fixes, parked riders), estimated positions for quiet riders |
+| **Tracking accuracy** (server) | Vitest + sockets | Impossible jumps ignored, late fixes don't move riders back, dead-zone batch upload stored with phone timestamps and no gap, oversized batches rejected, safety-monitor alert endpoint (auth, cooldown, allowed types), NOTIFY stream |
+| **Python** | pytest | ETA model, insights, GPS filter accuracy (benchmarked against known true positions), safety monitor rules (hard stop vs normal braking vs checkpoint stop vs friend nearby, silent phone, weak GPS, circling), no alerts on normal simulated rides |
+| **Load + failure** | `analytics/loadtest` (asyncio + python-socketio) | 100-300 riders with dead zones and dropped connections: delivery %, latency percentiles, stored-track gaps, crash-alert timing |
 | **End-to-end** | Playwright (`e2e/run_e2e.py`), two real browsers + emulated GPS | 66 checks across every user story: signup, RBAC, Create Group wizard, join, live GPS, off-route + overspeed alerts, group/private chat, broadcast, SOS round trip, pause/resume, **server restart mid-trip**, a full **offline drill** (API, web server and tile server all killed: navigation, cached map, app reopen, queued chat + SOS, then auto-sync on reconnect), invite link + QR, location explainer, SOS alarm, checkpoint, arrival, analytics, community approval, session persistence |
 
 Integration tests hit a **real PostgreSQL database** instead of mocks: the risky parts of this app are SQL constraints, cascades and transactions, and mocks would hide exactly those bugs. Routing is forced offline in tests (`OSRM_URL=http://127.0.0.1:9`), which also exercises the straight-line fallback deterministically.
@@ -21,8 +24,9 @@ cd server
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/navnet_test npx prisma db push
 
 # run
-npm test                 # server: 84 tests
-npm test --prefix ../client   # client: 10 tests
+npm test                 # server: 95 tests
+npm test --prefix ../client   # client: 25 tests
+cd ../analytics && python -m pytest   # Python: 32 tests
 npm run test:watch       # server watch mode
 ```
 
@@ -55,6 +59,14 @@ SHOTS=shots python e2e/group_ride.py  # also saves a screenshot of each moment
 
 Three phone-sized browsers ride an L-shaped route: the **captain** (admin riding), **Aarav**, and **Diya** (battery at 18%). 33 checks: emergency card, roll call, ready check, gap alert + "catch up" banner, push-to-talk voice auto-play, stop request, meet pin guidance, headcount + departure countdown, turn cleared, nearby fuel (stub Overpass), SOS to nearest friend with emergency card, battery saver, expenses, ride summary card. Map tiles and Overpass are served by a local stub on :8099, so it needs no internet.
 
+## Load + failure test
+
+See `analytics/README.md` → *Load + failure test*. Example: `python -m loadtest.run --riders 100 --minutes 3 --crash` against an API started with `RATE_LIMIT_DISABLED=1 SAFETY_MONITOR=1`. Saved results: `analytics/loadtest/results/`.
+
+## GPS accuracy benchmark
+
+`cd analytics && python -m scripts.gps_benchmark` prints the error of raw fixes vs the live (phone) filter vs the smoothed track on simulated rides with known true positions. After changing the filter in Python, run `python -m scripts.export_gps_fixture` and the client tests: the phone filter must still match.
+
 ## Manual QA script (10 minutes)
 
 1. `npm run db:seed`, `npm run dev`.
@@ -72,5 +84,5 @@ Three phone-sized browsers ride an L-shaped route: the **captain** (admin riding
 ## Known gaps / next tests
 
 - Run `e2e/run_e2e.py` in CI (needs a Postgres service + `playwright install chromium`).
-- Load test: k6 or Artillery with ~500 simulated sockets pinging every 3 s, to profile `processLocation`.
+- Load test from several machines (one Python process tops out around 300 riders) to find the server's real ceiling.
 - Fuzzing socket payloads (Zod already rejects malformed input; fuzzing would confirm no event can crash the gateway).

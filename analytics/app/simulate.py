@@ -63,7 +63,16 @@ def simulate_ride(
     slow: list[tuple[float, float, float]] | None = None,
     ping_every_s: int = 30,
     trip_id: str | None = None,
+    gps_noise_m: float = 6.0,
+    outlier_rate: float = 0.0,
 ) -> tuple[Ride, Scenario]:
+    """
+    GPS model: each phone's error drifts slowly (AR(1) with a ~20 s memory, like real
+    GNSS), the phone reports an accuracy close to its real error, and with `outlier_rate`
+    a fix jumps 80-400 m (multipath near buildings / under flyovers) - half of those
+    jumps come with an honest, large accuracy, half pretend to be accurate.
+    The true position is kept in `true_lat` / `true_lng` so accuracy can be measured.
+    """
     depart = depart or datetime(2026, 10, 4, 6, 30, tzinfo=timezone.utc)
     route = make_route(rng, km)
     cum = cumulative(route)
@@ -92,6 +101,8 @@ def simulate_ride(
 
     rows = []
     t = 0.0
+    rho = float(np.exp(-ping_every_s / 20))
+    err = rng.normal(0, gps_noise_m, (riders, 2))  # metres north, east
     while np.isnan(arrived).any() and t < 24 * 3600:
         hour = (depart + timedelta(seconds=t)).astimezone(IST).hour  # traffic follows local time
         for r in range(riders):
@@ -124,14 +135,25 @@ def simulate_ride(
             pos = np.interp(along[r], cum, np.arange(len(route)))
             i = min(int(pos), len(route) - 2)
             frac = pos - i
-            lat, lng = route[i] + (route[i + 1] - route[i]) * frac
-            lat += rng.normal(0, 6 / 111_320)
-            lng += rng.normal(0, 6 / 111_320)
+            true_lat, true_lng = route[i] + (route[i + 1] - route[i]) * frac
+            err[r] = rho * err[r] + np.sqrt(1 - rho**2) * rng.normal(0, gps_noise_m, 2)
+            north, east = err[r]
+            accuracy = max(3.0, float(np.hypot(north, east) * rng.uniform(0.8, 1.6) + rng.uniform(2, 5)))
+            if rng.random() < outlier_rate:
+                ang, jump = rng.uniform(0, 2 * np.pi), rng.uniform(80, 400)
+                north, east = north + jump * np.cos(ang), east + jump * np.sin(ang)
+                if rng.random() < 0.5:
+                    accuracy = jump * rng.uniform(0.6, 1.2)
+            lat = true_lat + north / 111_320
+            lng = true_lng + east / (111_320 * np.cos(np.radians(true_lat)))
+            d = route[i + 1] - route[i]
+            bearing = float(np.degrees(np.arctan2(d[1] * np.cos(np.radians(true_lat)), d[0])) % 360)
             reported = None if rng.random() < 0.1 else max(0.0, kmh + rng.normal(0, 1.5))
-            rows.append((user_ids[r], lat, lng, reported, depart + timedelta(seconds=t)))
+            heading = None if reported is None or kmh < 3 else float((bearing + rng.normal(0, 5)) % 360)
+            rows.append((user_ids[r], lat, lng, reported, depart + timedelta(seconds=t), accuracy, heading, true_lat, true_lng))
         t += ping_every_s
 
-    pings = pd.DataFrame(rows, columns=["user_id", "lat", "lng", "speed_kmh", "recorded_at"])
+    pings = pd.DataFrame(rows, columns=["user_id", "lat", "lng", "speed_kmh", "recorded_at", "accuracy", "heading", "true_lat", "true_lng"])
     pings["recorded_at"] = pd.to_datetime(pings["recorded_at"], utc=True)
     members = pd.DataFrame(
         {

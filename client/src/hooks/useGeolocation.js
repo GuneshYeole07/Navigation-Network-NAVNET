@@ -1,18 +1,41 @@
 import { useEffect, useRef, useState } from "react";
 import { BackgroundGeolocation, isNativeApp } from "../native/platform";
+import { GpsFilter } from "../utils/gpsFilter";
 
 /**
  * Continuous high-accuracy GPS + Battery Status API (where supported).
  * speed is converted to km/h; null when the device doesn't report it.
+ *
+ * Every fix goes through the live Kalman filter (utils/gpsFilter.js) first: `position` is
+ * the cleaned position (jumps rejected, noise smoothed); the phone's own fix is in
+ * `position.raw`. `accuracy` becomes the filter's own uncertainty in metres.
  */
 export function useGeolocation(enabled = true) {
-  const [position, setPosition] = useState(null);
+  const [position, setRawPosition] = useState(null);
+  const filter = useRef(new GpsFilter());
+  const setPosition = (raw) => {
+    const clean = filter.current.push(raw);
+    if (clean) setRawPosition(clean);
+  };
   const [error, setError] = useState(null);
   const [battery, setBattery] = useState(null);
   const supported = isNativeApp || (typeof navigator !== "undefined" && "geolocation" in navigator);
   const watchId = useRef(null);
 
   // Android app: GPS through a foreground service, so it keeps working with the screen locked.
+  useEffect(() => {
+    if (!enabled) {
+      filter.current.reset(); // a new sharing session starts a fresh track
+      return undefined;
+    }
+    // A stopped phone may send no more fixes; let the filter accept a held-back one by itself.
+    const t = setInterval(() => {
+      const moved = filter.current.tick(Date.now());
+      if (moved) setRawPosition(moved);
+    }, 3000);
+    return () => clearInterval(t);
+  }, [enabled]);
+
   useEffect(() => {
     if (!enabled || !isNativeApp) return undefined;
     let id = null;
@@ -23,7 +46,9 @@ export function useGeolocation(enabled = true) {
         backgroundMessage: "Your group can see you on the map. Open NavNet to stop.",
         requestPermissions: true,
         stale: false,
-        distanceFilter: 5,
+        // 0 = every fix (~1/s). With a distance filter a parked rider sends nothing and looks
+        // "lost"; the GPS is on anyway, and sending is throttled separately.
+        distanceFilter: 0,
       },
       (loc, err) => {
         if (err) {

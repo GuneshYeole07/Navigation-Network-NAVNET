@@ -149,6 +149,10 @@ Each `participation[]` item: `name, distanceKm, avgSpeedKmh, maxSpeedKmh, stops,
 | --- | --- | --- | --- | --- |
 | POST | `/uploads/image` | A | `multipart/form-data`, field `image` (JPG/PNG/WEBP ≤ 3 MB) | `{ url: "/uploads/<uuid>.jpg" }` |
 
+## Internal (service to service)
+
+`POST /api/internal/alerts` with header `X-Analytics-Key: <ANALYTICS_KEY>`; body `{ tripId, userId, type: POSSIBLE_CRASH | UNUSUAL_MOVEMENT | WEAK_GPS, message, data? }`. Used by the Python safety monitor; the alert goes to the admin (and, for a possible crash, the riding captain) with the usual cooldown. 401 without the key, 400 for any other type.
+
 ## Health
 
 `GET /api/health` → `{ status: "ok", db: "up" | "down", uptime }` (503 when the DB is down).
@@ -165,7 +169,8 @@ Connect with `io(API_URL, { auth: { token: "<JWT>" } })`. Every client → serve
 | --- | --- | --- | --- |
 | `trip:join` | `{ tripId }` | admin / member | snapshot `{ trip, members, stats, role }` |
 | `trip:leave` | `{ tripId }` | any | `{ left }` |
-| `location:update` | `{ tripId, lat, lng, speed?, heading?, accuracy?, battery? }` | member (max 1/s) | `{ member }` |
+| `location:update` | `{ tripId, lat, lng, speed?, heading?, accuracy?, battery?, recordedAt? }` | member (max 1/s) | `{ member }`, or `{ ignored: "out-of-order" \| "impossible-jump" }` |
+| `location:batch` | `{ tripId, points: [location…] }` (≤ 500, any order) | member | `{ stored, received }`: positions saved offline; stored thinned to 1 per 5 s (newest always kept), newest moves the rider |
 | `chat:send` | `{ tripId, body, recipientId? }` | admin / member (max 6 per 5 s) | message |
 | `sos:trigger` | `{ tripId, lat, lng, speed?, battery?, emergencyType, note? }` | member | `{ alertId, at }` |
 
@@ -176,14 +181,14 @@ Connect with `io(API_URL, { auth: { token: "<JWT>" } })`. Every client → serve
 | `sweep:set` | `{ tripId, userId }` | captain | |
 | `stop:request` | `{ tripId, reason: fuel\|food\|toilet\|rest\|photo\|other }` | member (1/min) | |
 
-`speed` is in km/h. `emergencyType`: `ACCIDENT BREAKDOWN MEDICAL FUEL LOST SECURITY OTHER`.
+`speed` is in km/h. `recordedAt` is when the phone took the fix (epoch ms or ISO); it's clamped to the last 6 h / next 60 s and defaults to now. A fix with `accuracy > 0` that implies more than 300 km/h since the last one is ignored (unless the next ones agree); `accuracy: 0` marks a simulator fix and is trusted. `emergencyType`: `ACCIDENT BREAKDOWN MEDICAL FUEL LOST SECURITY OTHER`.
 
 ### Server → client
 
 | Event | Room | Payload |
 | --- | --- | --- |
-| `member:location` | trip | member (snapshot shape) |
-| `members:update` | trip | member[] (every sweep, keeps statuses fresh) |
+| `member:location` | admin | member (snapshot shape), every accepted fix, at once |
+| `members:update` | trip | member[]: riders get everyone's moves batched once per second (and on every sweep) |
 | `member:status` | trip | member (on connect/disconnect) |
 | `member:joined` / `member:left` | trip | `{ userId, name, reason? }` |
 | `member:removed` | user | `{ tripId, tripName }` |

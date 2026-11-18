@@ -7,6 +7,7 @@ import { useTripLive } from "../../hooks/useTripLive";
 import { useGeolocation } from "../../hooks/useGeolocation";
 import { useRideNav } from "../../hooks/useRideNav";
 import { useLockScreenNav } from "../../native/lockScreenNav";
+import { bufferPosition, bufferedCount, flushPositions } from "../../utils/locationBuffer";
 import { useSmartEta } from "../../hooks/useSmartEta";
 import { useWakeLock } from "../../hooks/useWakeLock";
 import { useAuth } from "../../context/AuthContext";
@@ -23,6 +24,7 @@ import AnnouncementBanner from "../../components/trip/AnnouncementBanner";
 import NavStrip from "../../components/ride/NavStrip";
 import RideChat from "../../components/ride/RideChat";
 import OfflineMapCard from "../../components/ride/OfflineMapCard";
+import BatteryGuide from "../../components/ride/BatteryGuide";
 import LocationExplainer from "../../components/ride/LocationExplainer";
 import Milestone from "../../components/ui/Milestone";
 import RoadProgress from "../../components/ui/RoadProgress";
@@ -122,6 +124,7 @@ export default function TripDashboard() {
   const [view, setView] = useState({ key: "initial", points: null });
   const [voiceOn, setVoiceOn] = useState(voiceEnabled());
   const lastSent = useRef({ at: 0 });
+  const latestPosition = useRef(null);
 
   const me = members[user.id];
   const memberList = useMemo(() => Object.values(members), [members]);
@@ -161,20 +164,85 @@ export default function TripDashboard() {
 
   // Stream my position (throttled by battery level). If a fix arrives inside the throttle
   // window, send it when the window ends: the last position must never be dropped, or a
-  // rider who stops moving looks stuck at an old spot. With no network, it goes on reconnect.
+  // rider who stops moving looks stuck at an old spot. With no network, positions are kept
+  // on the phone and uploaded as one batch when the signal returns (no gaps in the track).
   const trailing = useRef(null);
+  const fixPayload = (p) => ({
+    lat: p.lat,
+    lng: p.lng,
+    speed: p.speed,
+    heading: p.heading,
+    accuracy: p.raw?.accuracy ?? p.accuracy, // the phone's own accuracy, for GPS-quality checks
+    battery,
+    recordedAt: p.timestamp || Date.now(),
+  });
   useEffect(() => {
-    if (!sharing || !position || !connected || ended) return undefined;
+    latestPosition.current = position;
+  }, [position]);
+  useEffect(() => {
+    if (!sharing || !position || ended) return undefined;
+    if (!connected) {
+      bufferPosition(id, fixPayload(position));
+      return undefined;
+    }
     const send = () => {
       lastSent.current = { at: Date.now() };
-      emit("location:update", { lat: position.lat, lng: position.lng, speed: position.speed, heading: position.heading, accuracy: position.accuracy, battery }).catch(() => {});
+      emit("location:update", fixPayload(position)).catch(() => bufferPosition(id, fixPayload(position)));
     };
     const wait = sendInterval(battery) - (Date.now() - lastSent.current.at);
     clearTimeout(trailing.current);
     if (wait <= 0) send();
     else trailing.current = setTimeout(send, wait);
     return () => clearTimeout(trailing.current);
-  }, [position, sharing, connected, emit, battery, ended]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [position, sharing, connected, emit, battery, ended, id]);
+
+  // Parked riders: some phones stop reporting when nothing moves. If the last fix said
+  // "standing still", re-confirm it every 20 s so the group doesn't see a stale dot. A moving
+  // rider whose fixes stop is NOT faked: the map shows "last seen" + an estimate instead.
+  useEffect(() => {
+    if (!sharing || ended || !connected) return undefined;
+    const t = setInterval(() => {
+      const p = latestPosition.current;
+      if (!p || Date.now() - lastSent.current.at < 20000 || (p.speed ?? 0) > 3) return;
+      lastSent.current = { at: Date.now() };
+      emit("location:update", { ...fixPayload(p), recordedAt: Date.now() }).catch(() => {});
+    }, 5000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sharing, ended, connected, emit]);
+
+  // Back online: upload the positions recorded while offline, so the track has no gap.
+  // Also retries every 15 s if an upload or a live send failed while "connected".
+  const [unsent, setUnsent] = useState(0);
+  const [syncNote, setSyncNote] = useState(null);
+  useEffect(() => {
+    const t = setInterval(() => setUnsent(bufferedCount(id)), 3000);
+    return () => clearInterval(t);
+  }, [id]);
+  useEffect(() => {
+    if (!connected || ended) return undefined;
+    let busy = false;
+    const flush = async () => {
+      const n = bufferedCount(id);
+      if (!n || busy) return;
+      busy = true;
+      setSyncNote(`Uploading ${n} saved position${n === 1 ? "" : "s"}…`);
+      try {
+        await flushPositions(id, emit);
+        setSyncNote(`Back online: ${n} position${n === 1 ? "" : "s"} uploaded, your track has no gap.`);
+        setTimeout(() => setSyncNote(null), 6000);
+      } catch {
+        setSyncNote(null); // retried below
+      } finally {
+        busy = false;
+        setUnsent(bufferedCount(id));
+      }
+    };
+    flush();
+    const t = setInterval(flush, 15000);
+    return () => clearInterval(t);
+  }, [connected, ended, id, emit]);
 
   // ── Voice cues: turns, off-route, arrival ──
   const spoken = useRef({ turn300: null, turnNow: null, offRoute: false, arrived: false });
@@ -305,6 +373,7 @@ export default function TripDashboard() {
       {trip.status === "PLANNED" && me && <Checklist tripId={id} initial={me.checklist} />}
 
       {!ended && <OfflineMapCard trip={trip} connected={connected} />}
+      {!ended && <BatteryGuide sharing={sharing} />}
 
       <section className="grid grid-cols-2 gap-3">
         <div className="rounded-control bg-road p-3 dark:bg-asphalt-600">
@@ -337,6 +406,12 @@ export default function TripDashboard() {
             {connected ? "Live" : "Offline — last known positions"}
           </span>
         </div>
+        {!connected && sharing && !ended && (
+          <p className="mt-1 text-xs text-signal">
+            No signal. Your GPS keeps recording{unsent ? ` (${unsent} saved)` : ""} and uploads when you're back. Faded dots show where others probably are.
+          </p>
+        )}
+        {connected && syncNote && <p className="mt-1 text-xs text-nh">{syncNote}</p>}
         <ul className="mt-2 divide-y divide-road-line dark:divide-asphalt-500">
           {[...shownMembers]
             .sort((a, b) => b.progress - a.progress)
@@ -477,7 +552,7 @@ export default function TripDashboard() {
             <FitBounds points={view.points || fitPoints} fitKey={view.key} />
             <Follow point={myPoint} enabled={follow && !!position} headingUp={headingUp} heading={travelHeading} onUserMove={() => setFollow(false)} />
             <RouteLayer trip={trip} visited={visited} progressMeters={progress} />
-            <MemberMarkers members={shownMembers} selfId={user.id} now={now} />
+            <MemberMarkers members={shownMembers} selfId={user.id} now={now} route={routeCtx} />
             {trip.meet && <Marker position={[trip.meet.lat, trip.meet.lng]} icon={targetIcon("meet")} zIndexOffset={900} />}
             {target && <Marker position={[target.lat, target.lng]} icon={targetIcon(target.kind)} zIndexOffset={950} />}
           </BaseMap>

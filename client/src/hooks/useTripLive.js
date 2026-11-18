@@ -161,9 +161,17 @@ export function useTripLive(tripId) {
       "alert:new": forThisTrip((a) => {
         setAlerts((prev) => [a, ...prev]);
         const meta = ALERT_META[a.type];
-        toast(a.message, { icon: meta?.emoji, duration: 6000 });
+        const crash = a.type === "POSSIBLE_CRASH";
+        toast(a.message, { icon: meta?.emoji, duration: crash ? 20000 : 6000 });
         // The captain rides with eyes on the road: group-safety alerts are spoken.
-        if (isCaptain() && (a.type === "GAP" || a.type === "STOP_REQUEST")) speak(a.message, { urgent: a.type === "GAP" });
+        if (isCaptain() && (a.type === "GAP" || a.type === "STOP_REQUEST" || crash)) speak(a.message, { urgent: a.type === "GAP" || crash });
+        if (crash) {
+          try {
+            navigator.vibrate?.([300, 100, 300]);
+          } catch {
+            /* unsupported */
+          }
+        }
       }),
       "sos:alert": forThisTrip((a) => {
         setAlerts((prev) => [a, ...prev]);

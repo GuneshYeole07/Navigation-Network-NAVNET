@@ -20,11 +20,17 @@ const SEVERITY = {
   WRONG_DIRECTION: "WARNING",
   GAP: "WARNING",
   STOP_REQUEST: "INFO",
+  // Raised by the Python safety monitor (analytics/app/safety.py).
+  POSSIBLE_CRASH: "CRITICAL",
+  UNUSUAL_MOVEMENT: "WARNING",
+  WEAK_GPS: "INFO",
 };
 
+export const SAFETY_TYPES = new Set(["POSSIBLE_CRASH", "UNUSUAL_MOVEMENT", "WEAK_GPS"]);
+
 /** Alerts the riding captain (group leader) also receives on their phone, not just the admin. */
-const CAPTAIN_TYPES = new Set(["SOS", "GAP", "STOP_REQUEST"]);
-const COOLDOWN_SECONDS = { STOP_REQUEST: 60, GAP: 180 };
+const CAPTAIN_TYPES = new Set(["SOS", "GAP", "STOP_REQUEST", "POSSIBLE_CRASH"]);
+const COOLDOWN_SECONDS = { STOP_REQUEST: 60, GAP: 180, POSSIBLE_CRASH: 600, UNUSUAL_MOVEMENT: 900, WEAK_GPS: 900 };
 
 /** Messages also shown to the rider themselves (not just the admin). */
 const RIDER_NOTICE = {

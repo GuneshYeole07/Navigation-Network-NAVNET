@@ -8,7 +8,7 @@ It's built for bike rides, car convoys, cycling groups, treks, college trips and
 | --- | --- |
 | Join with Group ID + password | Create trips: route, waypoints, unlimited checkpoints |
 | Live map: route, checkpoints, the group, the leader | **Monitoring Panel**: every rider's location, speed, ETA, distance from leader, last update, status |
-| ETA, distance done/remaining, progress, next checkpoint | Smart alerts: off-route, stationary, offline, low battery, overspeed, wrong direction, SOS |
+| ETA, distance done/remaining, progress, next checkpoint | Smart alerts: off-route, stationary, offline, low battery, overspeed, wrong direction, SOS, plus **possible crash, weak GPS, unusual movement** (Python safety monitor) |
 | Group chat, private chat with admin, announcements | Broadcast, private chat, remove riders, change leader |
 | One-tap **SOS** (name, GPS, speed, battery, type, time) | Start / pause / resume / end trip |
 | Explore communities, request to join, see upcoming trips | Live convoy dashboard + automatic post-trip analytics |
@@ -34,7 +34,21 @@ Which map is used, best first: your own Protomaps file (if the server has `PMTIL
 - **Smart ETA** on the ride screen and the monitoring panel: a gradient-boosted model trained on finished trips (traffic by hour, slow sections, the group's real pace, stops). About 35% more accurate than remaining distance ÷ planned speed in cross-validation.
 - **Ride insights** in the trip report: speed along the route km by km, the slowest stretches, where the group stopped, and each rider's steadiness and distance behind the leader.
 
+- **GPS cleaning**: a Kalman filter (+ RTS smoother for finished trips) that weights every fix by its accuracy, tells real turns from GPS glitches, and cuts position error from ~46 m to ~12 m on realistic phone GPS. The *same* filter runs live on every phone (`client/src/utils/gpsFilter.js`, tested to match the Python one within 1 m).
+- **Live safety monitor**: watches every position as it arrives (Postgres `LISTEN/NOTIFY`) and alerts the captain about a **possible crash** (hard stop, then still), **weak GPS**, and **unusual movement** (scikit-learn IsolationForest trained on normal riding).
+- **Load + failure tester** (`analytics/loadtest`): hundreds of simulated riders with dead zones and dropped connections, measuring delivery, latency and track gaps.
+
 The app works without it (those panels just don't appear). See `analytics/README.md`.
+
+### Tracking you can rely on
+
+- **Every fix is filtered on the phone** before it's shown or sent: GPS jumps (signal bouncing off buildings) are dropped, real U-turns and sharp bends are followed immediately (using the phone's own speed + heading), and a phone that hands back an old cached position can't teleport anyone.
+- **No signal ≠ lost data.** Positions recorded in a dead zone are saved on the phone (up to 2,000) and uploaded in one go when signal returns (`location:batch`), with the phone's own timestamps, so the stored track has no gap. The ride screen shows "No signal, N saved" and "uploaded" when it's back.
+- **Stale dots are labelled.** After 20 s without a fix, a rider's dot fades and shows "45s ago"; a dashed "ghost" marker shows where they probably are now (carried along the route at their last speed, for up to 2 min / 2 km).
+- **The server double-checks**: device timestamps (clamped), late fixes never move a rider backwards, impossible jumps (> 300 km/h) are ignored unless the next fixes agree.
+- **Parked riders stay "live"**: the Android app reports every fix (no distance filter), and a stopped phone re-confirms its position every 20 s.
+- **Android battery guide**: one-time card telling riders how to stop Android killing tracking (Unrestricted battery, Allow all the time, Autostart on Xiaomi/Oppo/Vivo/Realme).
+- **Scales**: 300 riders in one trip, with dead zones and dropped connections, all positions delivered to the admin's map, p95 63 ms (see `analytics/loadtest/results`).
 
 ### Android app
 
@@ -157,6 +171,9 @@ docker compose exec app npm run db:seed
 | `ALERT_COOLDOWN_SECONDS` | | `300` | Same alert for same rider is suppressed this long (SOS never is) |
 | `PING_PERSIST_SECONDS` | | `10` | How often a rider's live position is written to Postgres |
 | `SWEEP_INTERVAL_SECONDS` | | `15` | Background check for offline/stationary riders |
+| `ANALYTICS_URL` / `ANALYTICS_KEY` | | *(empty = off)* | Python analytics service and its shared secret |
+| `SAFETY_MONITOR` | | *(off)* | `1` = stream positions to the Python safety monitor (set it in `analytics/.env` too) |
+| `RATE_LIMIT_DISABLED` | | *(off)* | `1` = no rate limits, for local load tests only (ignored when `NODE_ENV=production`) |
 
 ### Client (`client/.env`)
 

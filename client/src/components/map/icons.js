@@ -8,7 +8,12 @@ const esc = (s = "") => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<
 
 const STATUS_RING = { MOVING: null, STOPPED: "#F2B705", OFFLINE: "#8A9499", ARRIVED: "#1F6FB2" };
 
-export function memberIcon(m, { self = false } = {}) {
+const ago = (s) => (s < 90 ? `${Math.round(s)}s` : s < 5400 ? `${Math.round(s / 60)}m` : `${Math.round(s / 3600)}h`);
+
+export function memberIcon(m, { self = false, staleS = 0 } = {}) {
+  // "Last seen" tag once a rider's GPS has been quiet for 20 s+, so nobody mistakes an old dot for a live one.
+  const stale = staleS >= 20 && staleS !== Infinity && m.status !== "ARRIVED";
+  const tag = stale ? `<span class="nn-stale">${ago(staleS)} ago</span>` : "";
   const color = m.status === "OFFLINE" ? "#8A9499" : memberColor(m.userId);
   const ring = STATUS_RING[m.status];
   const heading =
@@ -21,7 +26,19 @@ export function memberIcon(m, { self = false } = {}) {
     iconSize: [36, 36],
     iconAnchor: [18, 18],
     popupAnchor: [0, -18],
-    html: `<div style="position:relative;display:grid;place-items:center">${heading}${m.isLeader ? '<span class="crown">👑</span>' : ""}<div class="${classes}" style="background:${color};${ring ? `box-shadow:0 0 0 3px ${ring},0 3px 10px rgba(0,0,0,.35)` : ""}">${esc(initials(m.name))}</div></div>`,
+    html: `<div style="position:relative;display:grid;place-items:center">${heading}${m.isLeader ? '<span class="crown">👑</span>' : ""}${tag}<div class="${classes}${stale ? " is-stale" : ""}" style="background:${color};${ring ? `box-shadow:0 0 0 3px ${ring},0 3px 10px rgba(0,0,0,.35)` : ""}">${esc(initials(m.name))}</div></div>`,
+  });
+}
+
+/** Faded, dashed marker for where a quiet rider probably is now. */
+export function ghostIcon(m, ageS) {
+  const color = memberColor(m.userId);
+  return divIcon({
+    className: "nn-marker",
+    iconSize: [30, 30],
+    iconAnchor: [15, 15],
+    popupAnchor: [0, -15],
+    html: `<div class="nn-ghost" style="border-color:${color};color:${color}" title="Estimated, no GPS for ${ageS}s">${esc(initials(m.name))}</div>`,
   });
 }
 

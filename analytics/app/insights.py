@@ -132,8 +132,11 @@ def rider_stats(pings: pd.DataFrame, members: pd.DataFrame) -> list[dict]:
         mean = float(moving.mean()) if len(moving) else 0.0
         cv = float(moving.std() / mean) if len(moving) > 2 and mean > 0 else 0.0
         col = gap[:, j][~np.isnan(gap[:, j])]
+        acc = pd.to_numeric(g["accuracy"], errors="coerce") if "accuracy" in g else pd.Series(dtype=float)
         out.append(
             {
+                "gps_median_accuracy_m": None if acc.dropna().empty else int(round(float(acc.median()))),
+                "gps_rejected_pct": round(float((~g["gps_used"].astype(bool)).mean() * 100), 1) if "gps_used" in g else 0.0,
                 "user_id": str(uid),
                 "name": str(names.get(uid, "Rider")),
                 "avg_moving_kmh": round(mean, 1),

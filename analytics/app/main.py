@@ -4,8 +4,10 @@ NavNet analytics API (FastAPI).
 GET  /health                    service + model status (no key needed)
 GET  /trips/{trip_id}/insights  slow stretches, group stops, rider stats for a trip
 GET  /trips/{trip_id}/eta       machine-learned arrival time for a trip in progress
+GET  /trips/{trip_id}/tracks    everyone's cleaned GPS track (Kalman filter + smoother)
 GET  /model                     ETA model accuracy vs the old fixed-speed estimate
 POST /model/train               retrain the ETA model on finished trips
+GET  /safety                    live safety monitor status (when SAFETY_MONITOR=1)
 
 The NavNet API calls this service server-to-server (after checking the user may see the
 trip) and sends the shared secret in the X-Analytics-Key header.
@@ -24,7 +26,9 @@ from fastapi.concurrency import run_in_threadpool
 from .config import Settings, get_settings
 from .db import Repository, get_repository
 from .eta_model import EtaModel, live_eta
+from .gps import clean_pings
 from .insights import ride_insights
+from .safety_stream import SafetyStream
 
 log = logging.getLogger("navnet.analytics")
 
@@ -33,6 +37,7 @@ class State:
     model = EtaModel()
     training = threading.Lock()
     insights_cache: "OrderedDict[str, dict]" = OrderedDict()
+    safety: SafetyStream | None = None
 
 
 def train_model(repo: Repository, settings: Settings) -> dict:
@@ -59,7 +64,15 @@ async def lifespan(app: FastAPI):
             except Exception as e:  # no data yet, DB down…: keep serving with the fallback estimate
                 log.warning("ETA model not trained yet: %s", e)
         threading.Thread(target=background, daemon=True).start()
+    if settings.safety_monitor:
+        if not settings.analytics_key:
+            log.warning("SAFETY_MONITOR is on but ANALYTICS_KEY is empty: alerts can't be delivered")
+        State.safety = SafetyStream(settings)
+        State.safety.start()
     yield
+    if State.safety:
+        await State.safety.stop()
+        State.safety = None
 
 
 app = FastAPI(title="NavNet Analytics", version="1.0.0", lifespan=lifespan)
@@ -98,6 +111,43 @@ async def trip_eta(trip_id: str, repo: Repository = Depends(get_repository)):
     if ride.status not in ("ACTIVE", "PAUSED"):
         return {"available": False, "reason": f"Trip is {ride.status.lower()}"}
     return await run_in_threadpool(live_eta, ride, State.model)
+
+
+@app.get("/trips/{trip_id}/tracks", dependencies=[Depends(require_key)])
+async def trip_tracks(trip_id: str, every_s: int = 10, repo: Repository = Depends(get_repository)):
+    """Cleaned tracks for replay / export, one point every `every_s` seconds per rider."""
+    ride = await run_in_threadpool(repo.load_ride, trip_id)
+    if ride is None:
+        raise HTTPException(status_code=404, detail="Trip not found")
+
+    def build():
+        c = clean_pings(ride.pings)
+        names = dict(zip(ride.members["user_id"], ride.members["name"]))
+        out = []
+        for uid, g in c.groupby("user_id", sort=False):
+            g = g.set_index("recorded_at")
+            pts = g[["clean_lat", "clean_lng", "clean_kmh"]].resample(f"{max(1, every_s)}s").first().dropna()
+            acc = g["accuracy"].dropna() if "accuracy" in g else []
+            out.append(
+                {
+                    "user_id": str(uid),
+                    "name": str(names.get(uid, "Rider")),
+                    "fixes": int(len(g)),
+                    "rejected": int((~g["gps_used"].astype(bool)).sum()),
+                    "median_accuracy_m": None if len(acc) == 0 else round(float(acc.median()), 1),
+                    "points": [[t.isoformat(), round(r.clean_lat, 6), round(r.clean_lng, 6), round(r.clean_kmh, 1)] for t, r in pts.iterrows()],
+                }
+            )
+        return {"trip_id": trip_id, "riders": out}
+
+    return await run_in_threadpool(build)
+
+
+@app.get("/safety", dependencies=[Depends(require_key)])
+def safety_status():
+    if State.safety is None:
+        return {"running": False, "hint": "set SAFETY_MONITOR=1 here and in the API's .env"}
+    return State.safety.status()
 
 
 @app.get("/model", dependencies=[Depends(require_key)])

@@ -8,3 +8,4 @@ process.env.ADMIN_SIGNUP_CODE = "TEST-ADMIN-CODE";
 process.env.OSRM_URL = "http://127.0.0.1:9"; // force offline straight-line routing in tests
 process.env.DATABASE_URL =
   process.env.TEST_DATABASE_URL || process.env.DATABASE_URL.replace(/\/(\w+)(\?|$)/, "/$1_test$2");
+process.env.ANALYTICS_KEY = "test-analytics-key";

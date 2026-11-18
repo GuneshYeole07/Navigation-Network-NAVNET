@@ -132,8 +132,11 @@ async def main():
                 await ctx.add_init_script(f"navigator.getBattery = () => Promise.resolve({{level: {battery}, charging: false, addEventListener(){{}}, removeEventListener(){{}}}});")
             pg = await ctx.new_page(); pg.on("pageerror", lambda e: errors.append(f"{name}: {e}"))
             return ctx, pg
+        # The riders jump around the route as the story needs (back and forth, km in seconds),
+        # which a real GPS can't do. Accuracy 0 marks these as simulated fixes, which the GPS
+        # filter trusts as-is; the filter itself is exercised in run_e2e.py with accuracy 8.
         async def goto(ctx, m):
-            la, lo = at(m); await ctx.set_geolocation({"latitude": la, "longitude": lo, "accuracy": 8})
+            la, lo = at(m); await ctx.set_geolocation({"latitude": la, "longitude": lo, "accuracy": 0})
 
         # ── Captain (admin) rides along ──
         C, cp = await phone("captain", 0)

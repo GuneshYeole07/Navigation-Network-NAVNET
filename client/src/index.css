@@ -79,6 +79,9 @@
 .nn-member.is-self { outline: 3px solid #0E6B4E; outline-offset: 2px; }
 .nn-member.is-leader { border-color: #F2B705; }
 .nn-member.is-sweep { border-style: dashed; border-color: #1C2226; }
+.nn-member.is-stale { opacity: .55; filter: grayscale(.6); }
+.nn-stale { position: absolute; bottom: -16px; white-space: nowrap; font: 600 10px/1.4 system-ui, sans-serif; padding: 0 5px; border-radius: 8px; background: #1C2226; color: #fff; }
+.nn-ghost { width: 30px; height: 30px; border-radius: 50%; border: 2px dashed; background: rgba(255,255,255,.75); display: grid; place-items: center; font: 700 11px/1 system-ui, sans-serif; opacity: .85; }
 .nn-member .crown { position: absolute; top: -12px; font-size: 12px; }
 .nn-heading { position: absolute; inset: -9px; pointer-events: none; }
 .nn-pin { @apply grid h-8 w-8 place-items-center rounded-full text-base; border: 2px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,.3); }

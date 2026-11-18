@@ -9,7 +9,7 @@
  *   sos:trigger      { tripId, lat, lng, speed?, battery?, emergencyType, note? }
  *
  * Server → client:
- *   member:location, members:update, member:status, member:joined, member:left,
+ *   member:location (admins, every fix), members:update (riders, batched 1/s), member:status, member:joined, member:left,
  *   member:removed, convoy:stats, chat:message, announcement, alert:new, sos:alert,
  *   sos:broadcast, sos:acknowledged, trip:status, trip:leader, trip:report,
  *   checkpoint:visited, member:arrived, notification
@@ -22,6 +22,7 @@ import { verifyToken } from "../utils/security.js";
 import {
   departSchema,
   locationPayloadSchema,
+  locationBatchSchema,
   meetSchema,
   messageSchema,
   readySchema,
@@ -30,7 +31,7 @@ import {
   sweepSchema,
 } from "../validation/schemas.js";
 import * as ride from "../services/ride.service.js";
-import { emitToTrip, emitToTripAdmins, rooms, setIo } from "./emitter.js";
+import { broadcastLocation, emitToTrip, emitToTripAdmins, rooms, setIo } from "./emitter.js";
 import * as live from "../services/live.service.js";
 import { raiseAlert } from "../services/monitoring.service.js";
 import { sendMessage } from "../services/message.service.js";
@@ -163,15 +164,44 @@ export function initSocket(httpServer) {
         lastLocationAt = now;
 
         const loc = parse(locationPayloadSchema, payload);
-        const { member, events, ctx } = await live.processLocation(tripId, user.id, loc);
+        const { member, events, ctx, ignored } = await live.processLocation(tripId, user.id, loc);
+        if (ignored) return { ignored };
 
-        emitToTrip(tripId, "member:location", member);
+        broadcastLocation(tripId, member);
         for (const ev of events) {
           if (ev.type === "arrived") emitToTrip(tripId, "member:arrived", { tripId, ...ev });
           if (ev.type === "checkpoint") emitToTrip(tripId, "checkpoint:visited", { tripId, ...ev });
         }
         maybeEmitStats(tripId, ctx);
         return { member };
+      }),
+    );
+
+    // Positions the phone saved while it had no signal (tunnel, ghat, dead zone).
+    let lastBatchAt = 0;
+    socket.on(
+      "location:batch",
+      handle(async (payload) => {
+        const { tripId } = parse(tripIdSchema, payload);
+        await requireJoined(tripId);
+        const now = Date.now();
+        if (now - lastBatchAt < 500) {
+          const e = new Error("Too many uploads, slow down");
+          e.status = 429;
+          throw e;
+        }
+        lastBatchAt = now;
+        const { points } = parse(locationBatchSchema, payload);
+        const { stored, received, live: res } = await live.processBatch(tripId, user.id, points);
+        if (res && !res.ignored) {
+          broadcastLocation(tripId, res.member);
+          for (const ev of res.events) {
+            if (ev.type === "arrived") emitToTrip(tripId, "member:arrived", { tripId, ...ev });
+            if (ev.type === "checkpoint") emitToTrip(tripId, "checkpoint:visited", { tripId, ...ev });
+          }
+          maybeEmitStats(tripId, res.ctx);
+        }
+        return { stored, received };
       }),
     );
 

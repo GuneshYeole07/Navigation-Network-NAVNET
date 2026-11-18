@@ -181,6 +181,12 @@ export const locationPayloadSchema = z.object({
   heading: z.coerce.number().min(0).max(360).nullable().optional(),
   accuracy: z.coerce.number().min(0).max(100000).nullable().optional(),
   battery: z.coerce.number().int().min(0).max(100).nullable().optional(),
+  // When the phone took the fix (epoch ms or ISO). Defaults to "now" on the server.
+  recordedAt: z.union([z.number(), z.string()]).optional(),
+});
+
+export const locationBatchSchema = z.object({
+  points: z.array(locationPayloadSchema).min(1).max(500),
 });
 
 export const sosPayloadSchema = locationPayloadSchema.extend({

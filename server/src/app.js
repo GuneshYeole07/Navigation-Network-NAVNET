@@ -8,6 +8,7 @@ import fs from "node:fs";
 import { env } from "./config/env.js";
 import { ApiError } from "./utils/ApiError.js";
 import { isAllowedOrigin, isSameOrigin } from "./utils/origin.js";
+import internal from "./routes/internal.routes.js";
 import tiles from "./routes/tiles.routes.js";
 import api from "./routes/index.js";
 import { apiLimiter } from "./middleware/rateLimit.js";
@@ -39,6 +40,7 @@ export function createApp() {
   app.use("/uploads", express.static(path.resolve(env.uploadDir), { maxAge: "7d", fallthrough: false }));
   // Map tiles: hundreds of small requests per screen, so they skip the API rate limit.
   app.use("/api/tiles", tiles);
+  app.use("/api/internal", internal);
   app.use("/api", apiLimiter, api);
 
   // Optional single-service deploy: serve the built React app if present.

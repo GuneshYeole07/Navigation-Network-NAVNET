@@ -68,6 +68,9 @@ enum AlertType {
   WRONG_DIRECTION
   GAP
   STOP_REQUEST
+  POSSIBLE_CRASH
+  UNUSUAL_MOVEMENT
+  WEAK_GPS
 }
 
 enum AlertSeverity {

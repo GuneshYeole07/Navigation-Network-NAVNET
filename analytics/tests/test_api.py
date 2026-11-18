@@ -74,3 +74,12 @@ def test_train_then_live_eta(client):
 def test_eta_only_for_running_trips(client):
     c, ride = client
     assert c.get(f"/trips/{ride.trip_id}/eta", headers=KEY).json()["available"] is False
+
+
+def test_tracks_are_cleaned(client):
+    c, ride = client
+    body = c.get(f"/trips/{ride.trip_id}/tracks?every_s=60", headers=KEY).json()
+    assert len(body["riders"]) == 5
+    r = body["riders"][0]
+    assert r["fixes"] > 50 and len(r["points"]) > 10
+    assert len(r["points"][0]) == 4

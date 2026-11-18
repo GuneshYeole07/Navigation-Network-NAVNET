@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     model_path: Path = ROOT / "models" / "eta.joblib"
     auto_train: bool = True  # train on startup if there's no model yet
     train_min_trips: int = 5
+    # Live safety monitor (crash / unusual movement / weak GPS). Needs the API's
+    # SAFETY_MONITOR=1 too, and api_url to send alerts back to.
+    safety_monitor: bool = False
+    api_url: str = "http://localhost:5000"
+    safety_model_path: Path = ROOT / "models" / "safety.joblib"
 
     @property
     def sqlalchemy_url(self) -> str:

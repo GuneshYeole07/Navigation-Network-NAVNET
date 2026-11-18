@@ -38,6 +38,8 @@ function memberFromDb(m, visitedIds) {
     battery: m.battery ?? null,
     accuracy: null,
     lastSeenAt: m.lastSeenAt ? m.lastSeenAt.getTime() : null,
+    lastFixAt: m.lastSeenAt ? m.lastSeenAt.getTime() : null, // when the newest GPS fix was taken (phone clock)
+    rejectRun: [], // fixes refused as impossible jumps, to recover if they keep agreeing
     progress: m.progressMeters,
     maxProgress: m.maxProgressMeters,
     distanceFromRoute: 0,
@@ -234,6 +236,8 @@ export function serializeMember(ctx, m, now = Date.now()) {
     heading: m.heading,
     battery: m.battery,
     lastSeenAt: m.lastSeenAt,
+    lastFixAt: m.lastFixAt ?? m.lastSeenAt,
+    accuracy: m.accuracy ?? null,
     status: memberStatus(ctx, m, now),
     online: isOnline(ctx.trip.id, m.userId),
     progress: Math.round(m.progress),
@@ -355,7 +359,90 @@ export async function snapshot(tripId) {
 
 // ─────────────────────────── Hot path: a GPS ping ───────────────────────────
 
-export async function processLocation(tripId, userId, p) {
+function pingRow(tripId, userId, p, speed, fixAt) {
+  return {
+    tripId,
+    userId,
+    lat: p.lat,
+    lng: p.lng,
+    speed,
+    heading: p.heading ?? null,
+    accuracy: p.accuracy ?? null,
+    battery: p.battery ?? null,
+    recordedAt: new Date(fixAt),
+  };
+}
+
+/**
+ * Positions a phone recorded while it had no signal, uploaded in one go when it's back.
+ * All of them are stored (thinned to one per 5 s) so the track has no gap; the newest one
+ * then updates the rider's live position, progress, checkpoints passed and arrival.
+ */
+export async function processBatch(tripId, userId, points) {
+  const ctx = await getContext(tripId);
+  const m = ctx.members.get(userId);
+  if (!m) throw ApiError.forbidden("You are not an active member of this trip");
+  const now = Date.now();
+  const sorted = points
+    .map((p) => ({ ...p, fixAt: fixTime(p.recordedAt, now) }))
+    .filter((p) => (p.accuracy ?? 0) <= 100)
+    .sort((a, b) => a.fixAt - b.fixAt);
+  const keep = [];
+  for (const p of sorted) if (!keep.length || p.fixAt - keep[keep.length - 1].fixAt >= 5000) keep.push(p);
+  // Always keep the newest fix: it's where the rider is now.
+  const last = sorted[sorted.length - 1];
+  if (last && keep[keep.length - 1] !== last) keep.push(last);
+  if (keep.length) {
+    await prisma.locationPing.createMany({ data: keep.map((p) => pingRow(tripId, userId, p, p.speed ?? null, p.fixAt)) });
+  }
+  const newest = keep[keep.length - 1];
+  let result = null;
+  if (newest && (!m.lastFixAt || newest.fixAt > m.lastFixAt)) {
+    // Already stored above: just move the rider on the live map.
+    result = await processLocation(tripId, userId, newest, { persist: false });
+    // Live state still needs saving (progress / arrival / checkpoints) for restarts.
+    m.lastPersistAt = 0;
+  }
+  return { stored: keep.length, received: points.length, live: result };
+}
+
+/**
+ * Hand the position to the Python safety monitor (crash / unusual movement / weak GPS) via
+ * Postgres NOTIFY: no extra service to run, and a slow or stopped monitor never slows riding.
+ */
+function notifySafety(ctx, m, { speed, fixAt, heading, accuracy }) {
+  const here = [m.lat, m.lng];
+  const t = ctx.trip;
+  // Stopping near the destination, a checkpoint or the group's meet point is normal.
+  const places = [[t.destLat, t.destLng], [t.startLat, t.startLng], ...ctx.checkpoints.map((c) => [c.lat, c.lng])];
+  if (t.meetLat != null && t.meetLng != null) places.push([t.meetLat, t.meetLng]);
+  const nearPlace = places.some((p) => p[0] != null && haversine(here, p) <= 300);
+  const msg = JSON.stringify({
+    tripId: t.id,
+    userId: m.userId,
+    name: m.name,
+    t: fixAt,
+    lat: m.lat,
+    lng: m.lng,
+    speed: Math.round(speed * 10) / 10,
+    heading,
+    accuracy,
+    offRoute: Math.round(m.distanceFromRoute || 0),
+    nearPlace,
+  });
+  prisma.$executeRaw`SELECT pg_notify('navnet_ping', ${msg})`.catch(() => {});
+}
+
+/** When the fix was taken (phone clock), kept within sane bounds of the server clock. */
+export function fixTime(recordedAt, now = Date.now()) {
+  const t = recordedAt == null ? now : new Date(recordedAt).getTime();
+  if (!Number.isFinite(t)) return now;
+  return Math.min(now + 60_000, Math.max(now - 6 * 3600_000, t));
+}
+
+const MAX_PLAUSIBLE_KMH = 300;
+
+export async function processLocation(tripId, userId, p, { persist = true } = {}) {
   const ctx = await getContext(tripId);
   const { trip } = ctx;
   if (trip.status === "COMPLETED" || trip.status === "CANCELLED") {
@@ -365,15 +452,40 @@ export async function processLocation(tripId, userId, p) {
   if (!m) throw ApiError.forbidden("You are not an active member of this trip");
 
   const now = Date.now();
+  const fixAt = fixTime(p.recordedAt, now);
   const pos = [p.lat, p.lng];
 
-  // Speed: trust the device's GNSS speed; otherwise derive from displacement.
+  // Older than what we already show (arrived late / out of order): keep it for the track,
+  // but don't move the rider backwards on everyone's map.
+  if (m.lastFixAt && fixAt < m.lastFixAt - 1000) {
+    if (persist) await prisma.locationPing.create({ data: pingRow(tripId, userId, p, p.speed ?? null, fixAt) });
+    return { member: serializeMember(ctx, m, now), events: [], alerts: [], ctx, ignored: "out-of-order" };
+  }
+
+  // Impossible jump (> 300 km/h since the last fix): a GPS glitch, not the rider. Phones
+  // running the app already filter these; this protects against older apps and spoofing.
+  // If several "jumps" agree with each other, the rider really is there: accept.
+  // Only real GPS fixes (accuracy > 0) are checked; simulators and tests send none or 0,
+  // matching the phone-side filter, which also trusts accuracy 0.
+  const dtFix = m.lastFixAt ? (fixAt - m.lastFixAt) / 1000 : null;
+  if (p.accuracy > 0 && m.lat != null && dtFix != null && dtFix > 0 && dtFix < 120) {
+    // Allow for the fix's own uncertainty before calling it impossible.
+    const moved = Math.max(0, haversine([m.lat, m.lng], pos) - 2 * p.accuracy);
+    const kmh = (moved / dtFix) * 3.6;
+    if (kmh > MAX_PLAUSIBLE_KMH) {
+      m.rejectRun.push(pos);
+      const agree = m.rejectRun.length >= 3 && haversine(m.rejectRun[m.rejectRun.length - 3], pos) < 2000;
+      if (!agree) return { member: serializeMember(ctx, m, now), events: [], alerts: [], ctx, ignored: "impossible-jump" };
+    }
+  }
+  m.rejectRun = [];
+
+  // Speed: trust the device's GNSS speed; otherwise derive from displacement between fixes.
   let speed = p.speed;
   if (speed == null) {
-    if (m.lat != null && m.lastSeenAt && now > m.lastSeenAt) {
-      const dt = (now - m.lastSeenAt) / 1000;
-      // Pings closer than 2 s apart turn GPS jitter into absurd speeds; keep the last value.
-      speed = dt >= 2 ? (haversine([m.lat, m.lng], pos) / dt) * 3.6 : m.speed;
+    if (m.lat != null && dtFix != null && dtFix > 0) {
+      // Fixes closer than 2 s apart turn GPS jitter into absurd speeds; keep the last value.
+      speed = dtFix >= 2 ? (haversine([m.lat, m.lng], pos) / dtFix) * 3.6 : m.speed;
     } else speed = 0;
   }
   speed = Math.min(Math.max(speed, 0), 400);
@@ -405,6 +517,7 @@ export async function processLocation(tripId, userId, p) {
     battery: p.battery ?? m.battery,
     accuracy: p.accuracy ?? null,
     lastSeenAt: now,
+    lastFixAt: fixAt,
     distanceFromRoute: proj.distance,
     progress: proj.along,
     maxProgress: Math.max(m.maxProgress, proj.along),
@@ -449,21 +562,10 @@ export async function processLocation(tripId, userId, p) {
   }
 
   // Persist on a throttle (or immediately for meaningful events)
-  if (events.length || now - m.lastPersistAt >= cfg.pingPersistSeconds * 1000) {
+  if (persist && (events.length || now - m.lastPersistAt >= cfg.pingPersistSeconds * 1000)) {
     m.lastPersistAt = now;
     await prisma.$transaction([
-      prisma.locationPing.create({
-        data: {
-          tripId,
-          userId,
-          lat: p.lat,
-          lng: p.lng,
-          speed,
-          heading: p.heading ?? null,
-          accuracy: p.accuracy ?? null,
-          battery: p.battery ?? null,
-        },
-      }),
+      prisma.locationPing.create({ data: pingRow(tripId, userId, p, speed, fixAt) }),
       prisma.tripMember.update({
         where: { tripId_userId: { tripId, userId } },
         data: {
@@ -488,6 +590,8 @@ export async function processLocation(tripId, userId, p) {
         : []),
     ]);
   }
+
+  if (env.safetyMonitor) notifySafety(ctx, m, { speed, fixAt, heading: p.heading ?? null, accuracy: p.accuracy ?? null });
 
   const specs = evaluateLocation(trip, m);
   const alerts = [];

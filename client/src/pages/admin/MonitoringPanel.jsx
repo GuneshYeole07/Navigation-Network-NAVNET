@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { cumulative } from "../../utils/geo";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import { BarChart3, BellOff, Bike, ChevronLeft, Crosshair, Flag, Megaphone, Pause, Play, UserPlus, Wifi, WifiOff } from "lucide-react";
@@ -69,7 +70,7 @@ function Controls({ trip, onAction, onBroadcast, onInvite, busy }) {
 export default function MonitoringPanel() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const now = useNow(5000);
+  const now = useNow(2000);
   const { trip, setTrip, members, stats, alerts, ackAlert, error, loading, connected, role } = useTripLive(id);
   const smartEta = useSmartEta(id, { active: trip?.status === "ACTIVE", online: connected });
   const [tab, setTab] = useState("members");
@@ -105,6 +106,7 @@ export default function MonitoringPanel() {
   useEffect(() => setMuted(false), [sosCount]);
 
   const memberList = useMemo(() => Object.values(members), [members]);
+  const routeCtx = useMemo(() => (trip?.routeGeometry ? { line: trip.routeGeometry, cum: cumulative(trip.routeGeometry) } : null), [trip?.routeGeometry]);
   const openAlerts = alerts.filter((a) => !a.acknowledgedAt).length;
 
   const focusMember = useCallback(
@@ -314,7 +316,7 @@ export default function MonitoringPanel() {
             <InvalidateOnResize />
             <FitBounds points={view.points || fitPoints} fitKey={view.key} />
             <RouteLayer trip={trip} showWaypoints />
-            <MemberMarkers members={memberList} selfId={focused} now={now} onSelect={setFocused} />
+            <MemberMarkers members={memberList} selfId={focused} now={now} onSelect={setFocused} route={routeCtx} selfIsYou={false} />
             {trip.meet && <Marker position={[trip.meet.lat, trip.meet.lng]} icon={targetIcon("meet")} />}
           </BaseMap>
         }

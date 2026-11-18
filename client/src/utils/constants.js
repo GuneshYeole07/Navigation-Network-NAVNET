@@ -54,6 +54,10 @@ export const ALERT_META = {
   WRONG_DIRECTION: { label: "Wrong way", emoji: "🔄", tone: "warn" },
   GAP: { label: "Falling behind", emoji: "↔️", tone: "warn" },
   STOP_REQUEST: { label: "Stop request", emoji: "✋", tone: "info" },
+  // From the safety monitor (Python): checks only, never a diagnosis.
+  POSSIBLE_CRASH: { label: "Possible crash", emoji: "💥", tone: "signal" },
+  UNUSUAL_MOVEMENT: { label: "Unusual movement", emoji: "❓", tone: "warn" },
+  WEAK_GPS: { label: "Weak GPS", emoji: "📡", tone: "info" },
 };
 
 export const ROUTE_PROFILE = { BICYCLE: "cycling", WALKING: "walking" };

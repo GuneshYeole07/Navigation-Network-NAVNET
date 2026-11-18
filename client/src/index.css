@@ -1,0 +1,97 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root { color-scheme: light; }
+  .dark { color-scheme: dark; }
+  html, body, #root { height: 100%; }
+  body {
+    @apply bg-road text-asphalt font-sans antialiased dark:bg-asphalt dark:text-road;
+    font-feature-settings: "tnum" 1; /* tabular numbers: speeds/ETAs don't jitter */
+  }
+  h1, h2, h3 { @apply font-display font-semibold tracking-tight; }
+  :focus-visible { @apply outline-none ring-2 ring-stone-cap ring-offset-2 ring-offset-road dark:ring-offset-asphalt; }
+  ::selection { @apply bg-stone-cap/40; }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-control px-4 py-2.5 text-sm font-semibold
+      transition-colors disabled:cursor-not-allowed disabled:opacity-50 select-none;
+  }
+  .btn-primary { @apply btn bg-nh text-white hover:bg-nh-700 active:bg-nh-800; }
+  .btn-secondary { @apply btn bg-white text-asphalt ring-1 ring-road-line hover:bg-road dark:bg-asphalt-700 dark:text-road dark:ring-asphalt-500 dark:hover:bg-asphalt-600; }
+  .btn-ghost { @apply btn text-asphalt/80 hover:bg-asphalt/5 dark:text-road/80 dark:hover:bg-white/5; }
+  .btn-danger { @apply btn bg-signal text-white hover:bg-signal-700; }
+
+  .field-label { @apply mb-1.5 block text-sm font-medium text-asphalt/80 dark:text-road/80; }
+  .input {
+    @apply w-full rounded-control border border-road-line bg-white px-3.5 py-2.5 text-sm text-asphalt
+      placeholder:text-mist focus:border-nh focus:outline-none focus:ring-2 focus:ring-nh/20
+      dark:border-asphalt-500 dark:bg-asphalt-700 dark:text-road;
+  }
+  .input-error { @apply border-signal focus:border-signal focus:ring-signal/20; }
+  .field-error { @apply mt-1 text-xs font-medium text-signal; }
+
+  .panel { @apply rounded-sheet bg-white ring-1 ring-road-line dark:bg-asphalt-700 dark:ring-asphalt-500; }
+  .glass { @apply bg-white/80 backdrop-blur-md ring-1 ring-white/60 dark:bg-asphalt/75 dark:ring-white/10; }
+  .muted { @apply text-asphalt/60 dark:text-road/60; }
+  .chip { @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold; }
+
+  .skeleton {
+    @apply rounded-control bg-road-line dark:bg-asphalt-600;
+    background-image: linear-gradient(90deg, transparent, rgba(255,255,255,.45), transparent);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s infinite linear;
+  }
+  .dark .skeleton { background-image: linear-gradient(90deg, transparent, rgba(255,255,255,.06), transparent); }
+}
+
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@keyframes sos-pulse { 0% { box-shadow: 0 0 0 0 rgba(215,38,61,.55); } 100% { box-shadow: 0 0 0 18px rgba(215,38,61,0); } }
+.sos-pulse { animation: sos-pulse 1.6s infinite; }
+
+/* ── Map (MapLibre GL) theming ── */
+.nn-map { @apply font-sans; background: #dfe5e1; }
+.dark .nn-map { background: #1a2024; }
+.maplibregl-ctrl-attrib { @apply text-[10px]; }
+.dark .maplibregl-ctrl-attrib { background: rgba(28,34,38,.8) !important; color: #b7c0c4; }
+.dark .maplibregl-ctrl-attrib a { color: #8fd3b8; }
+.dark .maplibregl-ctrl-attrib-button { filter: invert(1); }
+.dark .maplibregl-ctrl-group { background: #252C31; }
+.dark .maplibregl-ctrl-group button + button { border-top-color: #3D474E; }
+.dark .maplibregl-ctrl-group .maplibregl-ctrl-icon { filter: invert(1); }
+.nn-popup .maplibregl-popup-content { @apply rounded-control px-3.5 py-3 font-sans text-sm shadow-float; }
+.dark .nn-popup .maplibregl-popup-content { background: #252C31; color: #F5F7F4; }
+.dark .nn-popup.maplibregl-popup-anchor-bottom .maplibregl-popup-tip { border-top-color: #252C31; }
+.dark .nn-popup.maplibregl-popup-anchor-top .maplibregl-popup-tip { border-bottom-color: #252C31; }
+.nn-popup .maplibregl-popup-close-button { @apply px-1.5 text-base; }
+.nn-tooltip .maplibregl-popup-content { @apply rounded-md bg-asphalt px-2 py-1 text-xs font-semibold text-white shadow-float; }
+.nn-tooltip .maplibregl-popup-tip { display: none; }
+.maplibregl-marker { cursor: pointer; }
+
+.nn-marker { background: none; border: 0; }
+.nn-member {
+  @apply grid h-9 w-9 place-items-center rounded-full font-display text-sm font-bold text-white;
+  border: 3px solid #fff; box-shadow: 0 3px 10px rgba(0,0,0,.35);
+}
+.nn-member.is-self { outline: 3px solid #0E6B4E; outline-offset: 2px; }
+.nn-member.is-leader { border-color: #F2B705; }
+.nn-member.is-sweep { border-style: dashed; border-color: #1C2226; }
+.nn-member .crown { position: absolute; top: -12px; font-size: 12px; }
+.nn-heading { position: absolute; inset: -9px; pointer-events: none; }
+.nn-pin { @apply grid h-8 w-8 place-items-center rounded-full text-base; border: 2px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,.3); }
+.nn-pin.visited { filter: grayscale(.6); opacity: .75; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+}
+
+/* Phones pinch-zoom; the +/- buttons would sit on top of the floating trip header. */
+@media (max-width: 1023px) { .nn-map .maplibregl-ctrl-top-right .maplibregl-ctrl-group, .nn-map .maplibregl-ctrl-bottom-left .maplibregl-ctrl-group, .nn-map .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group { display: none; } }
+
+/* Ride mode: keep toasts below the navigation strip so they never hide the next turn. */
+body.ride-mode .nn-toaster { top: 40vh !important; }
+/* While riding, a toast must never sit on top of a control you're about to tap. */
+body.ride-mode .nn-toaster * { pointer-events: none !important; }

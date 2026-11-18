@@ -1,0 +1,15 @@
+{
+  "name": "NavNet — Group Navigation",
+  "short_name": "NavNet",
+  "description": "Ride together: shared route, live convoy tracking, chat and SOS.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#08402F",
+  "theme_color": "#0E6B4E",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

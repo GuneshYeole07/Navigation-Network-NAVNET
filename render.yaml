@@ -1,0 +1,26 @@
+# One-click deploy on Render: Dashboard → New → Blueprint → pick this repo.
+# Creates a Postgres database and one web service (API + app on the same HTTPS URL).
+databases:
+  - name: navnet-db
+    plan: free
+    databaseName: navnet
+    user: navnet
+
+services:
+  - type: web
+    name: navnet
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: navnet-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_SIGNUP_CODE
+        sync: false # Render asks you for this on the first deploy
+      - key: NODE_ENV
+        value: production

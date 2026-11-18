@@ -1,0 +1,33 @@
+# Local full stack: Postgres + NavNet (API + built client) on http://localhost:5000
+#   docker compose up --build
+#   docker compose exec app npm run db:seed
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: navnet
+      POSTGRES_PASSWORD: navnet
+      POSTGRES_DB: navnet
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U navnet"]
+      interval: 5s
+      retries: 10
+
+  app:
+    build: .
+    depends_on:
+      db: { condition: service_healthy }
+    ports: ["5000:5000"]
+    environment:
+      DATABASE_URL: postgresql://navnet:navnet@db:5432/navnet
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production-please}
+      CLIENT_ORIGIN: http://localhost:5000
+      ADMIN_SIGNUP_CODE: ${ADMIN_SIGNUP_CODE:-NAVNET-ADMIN-2026}
+      ORS_API_KEY: ${ORS_API_KEY:-}
+    volumes: [uploads:/app/server/uploads]
+
+volumes:
+  pgdata:
+  uploads:

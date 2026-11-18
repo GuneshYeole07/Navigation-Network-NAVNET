@@ -1,0 +1,22 @@
+{
+  "name": "navnet",
+  "version": "1.0.0",
+  "private": true,
+  "description": "NavNet — Smart Group Navigation & Convoy Management Platform",
+  "scripts": {
+    "install:all": "npm install --prefix server && npm install --prefix client",
+    "dev": "concurrently -n api,web -c green,yellow \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
+    "build": "npm run build --prefix client",
+    "start": "npm start --prefix server",
+    "test": "npm test --prefix server && npm test --prefix client",
+    "db:migrate": "npm run db:migrate --prefix server",
+    "db:seed": "npm run db:seed --prefix server",
+    "simulate": "npm run simulate --prefix server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  },
+  "engines": {
+    "node": ">=20.19"
+  }
+}

@@ -1,0 +1,372 @@
+// NavNet — PostgreSQL schema (Prisma ORM)
+// Connection URL lives in prisma.config.js (Prisma 7 style).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────────── Enums ─────────────────────────────
+
+enum Role {
+  ADMIN
+  USER
+}
+
+enum TripStatus {
+  PLANNED
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+enum MemberStatus {
+  ACTIVE
+  REMOVED
+  LEFT
+}
+
+enum CheckpointCategory {
+  BREAKFAST
+  FUEL
+  HYDRATION
+  LUNCH
+  REST
+  SCENIC
+  HOTEL
+  HOSPITAL
+  OTHER
+}
+
+enum VehicleType {
+  BIKE
+  CAR
+  BICYCLE
+  BUS
+  WALKING
+  MIXED
+}
+
+enum MessageType {
+  CHAT
+  ANNOUNCEMENT
+  SYSTEM
+  VOICE
+}
+
+enum AlertType {
+  SOS
+  OFF_ROUTE
+  STATIONARY
+  OFFLINE
+  LOW_BATTERY
+  OVERSPEED
+  WRONG_DIRECTION
+  GAP
+  STOP_REQUEST
+}
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum JoinStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// ───────────────────────────── Models ─────────────────────────────
+
+model User {
+  id            String   @id @default(uuid())
+  name          String
+  email         String   @unique
+  passwordHash  String
+  role          Role     @default(USER)
+  phone         String?
+  vehicleNumber String?
+  // Emergency card — shown to the trip captain only, and attached to the rider's SOS.
+  bloodGroup     String?
+  emergencyName  String?
+  emergencyPhone String?
+  medicalNotes   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  expensesPaid      Expense[]
+  tripsAdministered Trip[]                  @relation("TripAdmin")
+  tripsLed          Trip[]                  @relation("TripLeader")
+  memberships       TripMember[]
+  communitiesOwned  Community[]
+  communityLinks    CommunityMember[]
+  sentMessages      Message[]               @relation("MessageSender")
+  receivedMessages  Message[]               @relation("MessageRecipient")
+  alerts            Alert[]
+  pings             LocationPing[]
+  visits            CheckpointVisit[]
+  announcements     CommunityAnnouncement[]
+}
+
+model Community {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  description String
+  city        String?
+  category    String   @default("General")
+  coverImage  String?
+  isPublic    Boolean  @default(true)
+  ownerId     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner         User                    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  members       CommunityMember[]
+  announcements CommunityAnnouncement[]
+  trips         Trip[]
+
+  @@index([ownerId])
+}
+
+model CommunityMember {
+  id          String     @id @default(uuid())
+  communityId String
+  userId      String
+  status      JoinStatus @default(PENDING)
+  message     String?
+  createdAt   DateTime   @default(now())
+  decidedAt   DateTime?
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([communityId, userId])
+}
+
+model CommunityAnnouncement {
+  id          String   @id @default(uuid())
+  communityId String
+  authorId    String
+  title       String
+  body        String
+  createdAt   DateTime @default(now())
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  author    User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([communityId, createdAt])
+}
+
+model Trip {
+  id              String      @id @default(uuid())
+  groupCode       String      @unique
+  passwordHash    String
+  name            String
+  description     String
+  imageUrl        String?
+  adminId         String
+  leaderId        String?
+  sweepId         String? // tail rider ("sweep") — the group's safety net
+  communityId     String?
+  startName       String
+  startLat        Float
+  startLng        Float
+  destName        String
+  destLat         Float
+  destLng         Float
+  routeGeometry   Json // [[lat, lng], ...]
+  routeDistance   Float // metres
+  routeDuration   Float // seconds
+  routeProvider   String      @default("osrm")
+  maxMembers      Int         @default(20)
+  vehicleType     VehicleType @default(BIKE)
+  speedLimitKmh   Int         @default(80)
+  gapAlertMeters  Int         @default(1500) // alert the captain when a rider falls this far behind
+  meetLat         Float? // captain's "meet here" pin for an unplanned group stop
+  meetLng         Float?
+  meetName        String?
+  meetSetAt       DateTime?
+  departAt        DateTime? // "leaving in N min" countdown at a stop
+  pois            Json? // fuel / hospital / mechanic along the route (OpenStreetMap), cached
+  poisAt          DateTime?
+  departureTime   DateTime
+  expectedArrival DateTime
+  status          TripStatus  @default(PLANNED)
+  startedAt       DateTime?
+  pausedAt        DateTime?
+  endedAt         DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  admin       User              @relation("TripAdmin", fields: [adminId], references: [id], onDelete: Cascade)
+  leader      User?             @relation("TripLeader", fields: [leaderId], references: [id], onDelete: SetNull)
+  community   Community?        @relation(fields: [communityId], references: [id], onDelete: SetNull)
+  waypoints   Waypoint[]
+  checkpoints Checkpoint[]
+  members     TripMember[]
+  messages    Message[]
+  alerts      Alert[]
+  pings       LocationPing[]
+  visits      CheckpointVisit[]
+  report      TripReport?
+  expenses    Expense[]
+
+  @@index([adminId])
+  @@index([communityId, departureTime])
+}
+
+model Waypoint {
+  id     String @id @default(uuid())
+  tripId String
+  order  Int
+  name   String
+  lat    Float
+  lng    Float
+
+  trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@index([tripId, order])
+}
+
+model Checkpoint {
+  id       String             @id @default(uuid())
+  tripId   String
+  order    Int
+  name     String
+  category CheckpointCategory @default(OTHER)
+  lat      Float
+  lng      Float
+  eta      DateTime?
+
+  trip   Trip              @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  visits CheckpointVisit[]
+
+  @@index([tripId, order])
+}
+
+model TripMember {
+  id                String       @id @default(uuid())
+  tripId            String
+  userId            String
+  status            MemberStatus @default(ACTIVE)
+  vehicleNumber     String?
+  joinedAt          DateTime     @default(now())
+  lastLat           Float?
+  lastLng           Float?
+  lastSpeed         Float? // km/h
+  lastHeading       Float?
+  battery           Int?
+  lastSeenAt        DateTime?
+  checklist         Json? // pre-ride checklist { fuel: true, documents: true, ... }
+  readyAt           DateTime? // answered the captain's "ready to roll?" check
+  progressMeters    Float        @default(0)
+  maxProgressMeters Float        @default(0)
+  arrivedAt         DateTime?
+
+  trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tripId, userId])
+}
+
+model LocationPing {
+  id         BigInt   @id @default(autoincrement())
+  tripId     String
+  userId     String
+  lat        Float
+  lng        Float
+  speed      Float? // km/h
+  heading    Float?
+  accuracy   Float?
+  battery    Int?
+  recordedAt DateTime @default(now())
+
+  trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tripId, userId, recordedAt])
+}
+
+model CheckpointVisit {
+  id           String   @id @default(uuid())
+  tripId       String
+  checkpointId String
+  userId       String
+  visitedAt    DateTime @default(now())
+
+  trip       Trip       @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  checkpoint Checkpoint @relation(fields: [checkpointId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([checkpointId, userId])
+}
+
+model Message {
+  id          String      @id @default(uuid())
+  tripId      String
+  senderId    String
+  recipientId String? // null = group chat / broadcast
+  type        MessageType @default(CHAT)
+  body        String
+  audioUrl    String? // push-to-talk voice clip
+  durationMs  Int?
+  createdAt   DateTime    @default(now())
+
+  trip      Trip  @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  sender    User  @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipient User? @relation("MessageRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@index([tripId, createdAt])
+  @@index([tripId, senderId, recipientId])
+}
+
+model Alert {
+  id             String        @id @default(uuid())
+  tripId         String
+  userId         String?
+  type           AlertType
+  severity       AlertSeverity @default(WARNING)
+  message        String
+  data           Json?
+  lat            Float?
+  lng            Float?
+  createdAt      DateTime      @default(now())
+  acknowledgedAt DateTime?
+
+  trip Trip  @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tripId, createdAt])
+}
+
+model TripReport {
+  id          String   @id @default(uuid())
+  tripId      String   @unique
+  summary     Json
+  generatedAt DateTime @default(now())
+
+  trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+}
+
+/// Shared trip expense (fuel, food, tolls), split equally among `splitAmong` user ids.
+model Expense {
+  id          String   @id @default(uuid())
+  tripId      String
+  paidById    String
+  amountPaise Int
+  description String
+  splitAmong  Json // [userId, ...]
+  createdAt   DateTime @default(now())
+
+  trip   Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  paidBy User @relation(fields: [paidById], references: [id], onDelete: Cascade)
+
+  @@index([tripId, createdAt])
+}

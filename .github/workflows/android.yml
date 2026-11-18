@@ -1,0 +1,43 @@
+# Builds the NavNet Android app (APK) in the cloud — no Android Studio needed.
+# 1. GitHub repo → Settings → Secrets and variables → Actions → Variables → New variable:
+#      NAVNET_API_URL = https://your-navnet.onrender.com   (your deployed NavNet address)
+# 2. Actions tab → "Android app" → Run workflow.
+# 3. When it finishes, download "navnet-android" from the run page and install the .apk on the phone.
+name: Android app
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: client/package-lock.json }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 21 }
+      - uses: android-actions/setup-android@v3
+
+      - name: Build the web app for the phone
+        working-directory: client
+        env:
+          VITE_API_URL: ${{ vars.NAVNET_API_URL }}
+          VITE_SHOW_DEMO: "false"
+        run: |
+          if [ -z "$VITE_API_URL" ]; then echo "::error::Set the NAVNET_API_URL repository variable to your deployed NavNet address"; exit 1; fi
+          npm ci
+          npm run build
+          npx cap sync android
+
+      - name: Build APK
+        working-directory: client/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: navnet-android
+          path: client/android/app/build/outputs/apk/debug/app-debug.apk

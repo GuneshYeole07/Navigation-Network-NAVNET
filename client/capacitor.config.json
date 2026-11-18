@@ -1,0 +1,18 @@
+{
+  "appId": "com.navnet.app",
+  "appName": "NavNet",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_navnet",
+      "iconColor": "#0E6B4F"
+    }
+  },
+  "android": {
+    "allowMixedContent": false,
+    "useLegacyBridge": true
+  }
+}
